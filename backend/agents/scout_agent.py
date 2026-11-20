@@ -22,7 +22,12 @@ class ScoutAgent(BaseAgent):
     name = "scout"
     label = "Scout Agent"
 
-    async def run(self, settings: Dict[str, Any], mock_mode: bool) -> Dict[str, Any]:
+    async def run(
+        self,
+        settings: Dict[str, Any],
+        mock_mode: bool,
+        category_queries: List[str] | None = None,
+    ) -> Dict[str, Any]:
         self.start_timer()
         self.check_cancelled()
 
@@ -32,15 +37,15 @@ class ScoutAgent(BaseAgent):
 
         await self.set_state(
             AgentStatus.RUNNING,
-            f"Scanning {'mock feed' if mock_mode else 'LinkedIn & Indeed'} for {len(keywords)} keywords",
+            f"Scanning {'mock feed' if mock_mode else 'LinkedIn, Indeed & Google Jobs'} across Pakistan",
             0,
-            len(keywords),
+            len(category_queries or keywords),
         )
 
         raw_jobs: List[Dict[str, Any]] = []
 
         if mock_mode:
-            await self.log("Mock/Test Mode active — loading simulated Lahore & Remote tech job feed.")
+            await self.log("Mock/Test Mode active — loading simulated Pakistan & Remote job feed.")
             await asyncio.sleep(0.6)
             self.check_cancelled()
             raw_jobs = get_mock_jobs()
@@ -53,14 +58,20 @@ class ScoutAgent(BaseAgent):
         else:
             from jobspy import scrape_jobs
 
-            query_groups = [
-                " OR ".join(keywords[:3]) if keywords else "Software Engineer",
-                " OR ".join(keywords[3:]) if len(keywords) > 3 else "TypeScript React",
-            ]
-            search_targets = [
-                {"location": location, "is_remote": False, "label": location},
-                {"location": "Pakistan", "is_remote": True, "label": "Remote"},
-            ]
+            if category_queries:
+                query_groups = category_queries[:8]
+                search_targets = [
+                    {"location": "Pakistan", "is_remote": False, "label": "Pakistan"},
+                ]
+            else:
+                query_groups = [
+                    " OR ".join(keywords[:3]) if keywords else "Software Engineer",
+                    " OR ".join(keywords[3:]) if len(keywords) > 3 else "TypeScript React",
+                ]
+                search_targets = [
+                    {"location": location, "is_remote": False, "label": location},
+                    {"location": "Pakistan", "is_remote": True, "label": "Remote"},
+                ]
 
             total_steps = len(query_groups) * len(search_targets)
             step = 0
@@ -75,14 +86,14 @@ class ScoutAgent(BaseAgent):
                         step,
                         total_steps,
                     )
-                    await self.log(f"Scraping LinkedIn & Indeed: '{term}' in {target['label']} (last {hours_old}h)")
+                    await self.log(f"Scraping LinkedIn, Indeed & Google: '{term}' in {target['label']} (last {hours_old}h)")
                     try:
                         df = await asyncio.to_thread(
                             scrape_jobs,
-                            site_name=["linkedin", "indeed"],
+                            site_name=["linkedin", "indeed", "google"],
                             search_term=term,
                             location=target["location"],
-                            results_wanted=8,
+                            results_wanted=6,
                             hours_old=hours_old,
                             country_indeed="Pakistan",
                             is_remote=target["is_remote"],

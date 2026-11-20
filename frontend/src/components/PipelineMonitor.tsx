@@ -32,6 +32,7 @@ interface PipelineMonitorProps {
 }
 
 const AGENT_ICONS: Record<AgentState["name"], React.ReactNode> = {
+  category_planner: <Cpu className="h-4 w-4 text-violet-400" />,
   scout: <Radar className="h-4 w-4 text-sky-400" />,
   recruiter: <UserCheck className="h-4 w-4 text-emerald-400" />,
   writer: <FileText className="h-4 w-4 text-amber-400" />,
@@ -39,10 +40,11 @@ const AGENT_ICONS: Record<AgentState["name"], React.ReactNode> = {
 };
 
 const AGENT_SUBTITLES: Record<AgentState["name"], string> = {
-  scout: "LinkedIn & Indeed · Deduplication",
-  recruiter: "Gemini 2.5 Flash · CV Scoring",
+  category_planner: "Pakistan Top Categories · Bank · Univ · Tech",
+  scout: "LinkedIn, Indeed & Google · Pakistan",
+  recruiter: "Gemini AI · CV Scoring",
   writer: "ATS Bullets · Pitch · Interview Qs",
-  dispatcher: "SQLite Persistence · Telegram",
+  dispatcher: "SQLite Persistence · Google Sheets",
 };
 
 function statusBadge(status: AgentStatus) {

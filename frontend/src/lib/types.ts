@@ -3,7 +3,7 @@ export type AgentStatus = "IDLE" | "RUNNING" | "COMPLETED" | "ERROR";
 export type JobStatus = "New" | "Applied" | "Interview" | "Rejected";
 
 export interface AgentState {
-  name: "scout" | "recruiter" | "writer" | "dispatcher";
+  name: "category_planner" | "scout" | "recruiter" | "writer" | "dispatcher";
   label: string;
   status: AgentStatus;
   current_task: string;

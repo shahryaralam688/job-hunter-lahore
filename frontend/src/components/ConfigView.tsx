@@ -14,6 +14,11 @@ interface ConfigViewProps {
 
 const AGENT_META: { key: string; label: string; hint: string }[] = [
   {
+    key: "category_planner",
+    label: "Category Planner Agent Prompt",
+    hint: "Generates top Pakistan job categories (Banking, University Professor, Govt, Tech) before searching.",
+  },
+  {
     key: "scout",
     label: "Scout Agent Prompt",
     hint: "Controls scraping focus and metadata hygiene.",

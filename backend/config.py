@@ -51,6 +51,12 @@ DEFAULT_HOURS_OLD = 72
 DEFAULT_MIN_MATCH_SCORE = 7.0
 
 DEFAULT_SYSTEM_PROMPTS = {
+    "category_planner": (
+        "You are a Pakistan Career Category Planner. Before searching the internet, generate 5 top, "
+        "high-prestige job categories across Pakistan (Banking & Finance, University Professor & Academia, "
+        "Government & Public Sector, Tech & Software Engineering, and Corporate Management) with 2-3 "
+        "clean search queries per category."
+    ),
     "scout": (
         "You are the Scout Agent. Target fresh tech roles posted within the configured window "
         "across Lahore (On-site/Hybrid) and Remote. Prioritize clean metadata, accurate work-mode "

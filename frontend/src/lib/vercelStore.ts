@@ -122,6 +122,7 @@ interface StoreState {
 
 function freshAgents(): AgentState[] {
   return [
+    { name: "category_planner", label: "Category Planner", status: "IDLE", current_task: "Waiting for pipeline run", items_processed: 0, items_total: 0, execution_time_ms: 0 },
     { name: "scout", label: "Scout Agent", status: "IDLE", current_task: "Waiting for pipeline run", items_processed: 0, items_total: 0, execution_time_ms: 0 },
     { name: "recruiter", label: "Recruiter Agent", status: "IDLE", current_task: "Waiting for pipeline run", items_processed: 0, items_total: 0, execution_time_ms: 0 },
     { name: "writer", label: "Writer Agent", status: "IDLE", current_task: "Waiting for pipeline run", items_processed: 0, items_total: 0, execution_time_ms: 0 },
