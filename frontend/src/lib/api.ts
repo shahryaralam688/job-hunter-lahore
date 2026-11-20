@@ -8,11 +8,9 @@ import type {
   SettingsResponse,
 } from "./types";
 
-export const API_BASE =
-  process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+export const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
 
-export const WS_BASE =
-  process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8000";
+export const WS_BASE = process.env.NEXT_PUBLIC_WS_URL || "";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {

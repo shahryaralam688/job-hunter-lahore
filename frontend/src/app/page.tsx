@@ -113,8 +113,12 @@ export default function DashboardPage() {
     refreshData();
   }, [refreshData]);
 
-  // WebSocket live stream with auto-reconnect
+  // WebSocket live stream with auto-reconnect (when external WS_BASE is configured)
   useEffect(() => {
+    if (!WS_BASE) {
+      setWsConnected(true);
+      return;
+    }
     let cancelled = false;
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -172,6 +176,9 @@ export default function DashboardPage() {
     try {
       await api.runPipeline(settings?.mock_mode);
       setErrorBanner(null);
+      if (!WS_BASE) {
+        await refreshData();
+      }
     } catch (err) {
       setErrorBanner(err instanceof Error ? err.message : "Failed to start pipeline");
     }
