@@ -3,7 +3,7 @@ from typing import Any, Dict, List
 import httpx
 
 from agents.base import BaseAgent
-from config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
+from config import GOOGLE_SHEET_WEBHOOK_URL, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
 from database import save_job
 from models import AgentStatus
 
