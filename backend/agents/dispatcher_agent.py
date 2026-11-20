@@ -104,10 +104,30 @@ class DispatcherAgent(BaseAgent):
                     level="WARN",
                 )
 
+        # Optional Google Sheets Webhook sync (persistent Google Drive storage)
+        sheets_synced = 0
+        if GOOGLE_SHEET_WEBHOOK_URL and kits:
+            try:
+                async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
+                    for kit in kits:
+                        resp = await client.post(GOOGLE_SHEET_WEBHOOK_URL, json=kit)
+                        if resp.status_code == 200:
+                            sheets_synced += 1
+                await self.log(f"Synced {sheets_synced}/{len(kits)} shortlisted kits to Google Sheets.")
+            except Exception as exc:
+                await self.log(f"Google Sheets webhook warning: {exc}", level="WARN")
+
         await self.set_state(
             AgentStatus.COMPLETED,
-            f"Saved {saved_shortlisted} kits" + (" · Telegram sent" if telegram_sent else ""),
+            f"Saved {saved_shortlisted} kits"
+            + (" · Sheets synced" if sheets_synced else "")
+            + (" · Telegram sent" if telegram_sent else ""),
             total,
             total,
         )
-        return {"saved_total": saved_total, "saved_shortlisted": saved_shortlisted, "telegram_sent": telegram_sent}
+        return {
+            "saved_total": saved_total,
+            "saved_shortlisted": saved_shortlisted,
+            "sheets_synced": sheets_synced,
+            "telegram_sent": telegram_sent,
+        }
