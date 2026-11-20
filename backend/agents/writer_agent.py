@@ -6,7 +6,7 @@ from google import genai
 from google.genai import types
 
 from agents.base import BaseAgent
-from config import DEFAULT_SYSTEM_PROMPTS, GEMINI_API_KEY
+from config import DEFAULT_SYSTEM_PROMPTS, GEMINI_API_KEY, GEMINI_MODEL
 from models import AgentStatus, WriterKit
 
 
@@ -118,7 +118,7 @@ class WriterAgent(BaseAgent):
                 try:
                     response = await asyncio.to_thread(
                         client.models.generate_content,
-                        model="gemini-2.5-flash",
+                        model=GEMINI_MODEL,
                         contents=prompt,
                         config=types.GenerateContentConfig(
                             system_instruction=system_prompt,
