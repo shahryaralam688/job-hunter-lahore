@@ -59,9 +59,10 @@ class ScoutAgent(BaseAgent):
             from jobspy import scrape_jobs
 
             if category_queries:
-                query_groups = category_queries[:8]
+                query_groups = category_queries[:12]
                 search_targets = [
                     {"location": "Pakistan", "is_remote": False, "label": "Pakistan"},
+                    {"location": "Pakistan", "is_remote": True, "label": "Remote"},
                 ]
             else:
                 query_groups = [
@@ -82,18 +83,18 @@ class ScoutAgent(BaseAgent):
                     step += 1
                     await self.set_state(
                         AgentStatus.RUNNING,
-                        f"Scraping '{term}' ({target['label']})",
+                        f"Deep scraping '{term}' ({target['label']})",
                         step,
                         total_steps,
                     )
-                    await self.log(f"Scraping LinkedIn, Indeed & Google: '{term}' in {target['label']} (last {hours_old}h)")
+                    await self.log(f"Deep scraping LinkedIn, Indeed & Google: '{term}' in {target['label']} (last {hours_old}h)")
                     try:
                         df = await asyncio.to_thread(
                             scrape_jobs,
                             site_name=["linkedin", "indeed", "google"],
                             search_term=term,
                             location=target["location"],
-                            results_wanted=6,
+                            results_wanted=10,
                             hours_old=hours_old,
                             country_indeed="Pakistan",
                             is_remote=target["is_remote"],
