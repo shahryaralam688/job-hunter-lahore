@@ -59,7 +59,7 @@ class ScoutAgent(BaseAgent):
             from jobspy import scrape_jobs
 
             if category_queries:
-                query_groups = category_queries[:12]
+                query_groups = category_queries[:20]
                 search_targets = [
                     {"location": "Pakistan", "is_remote": False, "label": "Pakistan"},
                     {"location": "Pakistan", "is_remote": True, "label": "Remote"},
