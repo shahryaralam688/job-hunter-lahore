@@ -51,6 +51,7 @@ export function ConfigView({
   const [keywordsInput, setKeywordsInput] = useState(settings.keywords.join(", "));
   const [saving, setSaving] = useState(false);
   const [savedToast, setSavedToast] = useState(false);
+  const [showPrompts, setShowPrompts] = useState(false);
 
   useEffect(() => {
     setDraft(settings);
@@ -259,52 +260,65 @@ export function ConfigView({
         </div>
       </div>
 
-      {/* Agent System Prompts */}
+      {/* Agent System Prompts (Collapsible for simpler UI) */}
       <div className="space-y-4 rounded-xl border border-zinc-800/80 bg-[#111114] p-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="text-sm font-semibold text-zinc-100">
-              Agent System Prompts
+              Advanced: Agent System Prompts ({AGENT_META.length})
             </h2>
             <p className="text-xs text-zinc-400">
-              Tune how strict the Recruiter or how direct the Writer is without touching code.
+              Optional — tune each agent&apos;s behavior without touching code.
             </p>
           </div>
-          <button
-            id="reset-prompts-btn"
-            type="button"
-            onClick={onResetPrompts}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-1.5 text-xs font-medium text-zinc-300 hover:bg-zinc-800 cursor-pointer"
-          >
-            <RotateCcw className="h-3.5 w-3.5" />
-            Reset to Default
-          </button>
+          <div className="flex items-center gap-2">
+            {showPrompts && (
+              <button
+                id="reset-prompts-btn"
+                type="button"
+                onClick={onResetPrompts}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-1.5 text-xs font-medium text-zinc-300 hover:bg-zinc-800 cursor-pointer"
+              >
+                <RotateCcw className="h-3.5 w-3.5" />
+                Reset to Default
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setShowPrompts((prev) => !prev)}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-xs font-medium text-zinc-200 hover:bg-zinc-800 cursor-pointer"
+            >
+              {showPrompts ? "Hide Prompts" : "Edit Agent Prompts"}
+            </button>
+          </div>
         </div>
 
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          {AGENT_META.map((agent) => (
-            <div key={agent.key} className="space-y-1.5">
-              <label className="block text-xs font-medium text-zinc-200">
-                {agent.label}
-              </label>
-              <p className="text-[11px] text-zinc-500">{agent.hint}</p>
-              <textarea
-                rows={4}
-                value={draft.prompts?.[agent.key] || ""}
-                onChange={(e) =>
-                  setDraft({
-                    ...draft,
-                    prompts: {
-                      ...draft.prompts,
-                      [agent.key]: e.target.value,
-                    },
-                  })
-                }
-                className="w-full rounded-lg border border-zinc-800 bg-zinc-950 p-3 text-xs leading-relaxed text-zinc-200 focus:border-emerald-500/60 focus:outline-none"
-              />
-            </div>
-          ))}
-        </div>
+        {showPrompts && (
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            {AGENT_META.map((agent) => (
+              <div key={agent.key} className="space-y-1.5">
+                <label className="block text-xs font-medium text-zinc-200">
+                  {agent.label}
+                </label>
+                <p className="text-[11px] text-zinc-500">{agent.hint}</p>
+                <textarea
+                  rows={4}
+                  value={draft.prompts?.[agent.key] || ""}
+                  onChange={(e) =>
+                    setDraft({
+                      ...draft,
+                      prompts: {
+                        ...draft.prompts,
+                        [agent.key]: e.target.value,
+                      },
+                    })
+                  }
+                  className="w-full rounded-lg border border-zinc-800 bg-zinc-950 p-3 text-xs leading-relaxed text-zinc-200 focus:border-emerald-500/60 focus:outline-none"
+                />
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </form>
   );

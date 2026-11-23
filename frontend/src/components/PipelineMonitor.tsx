@@ -99,11 +99,17 @@ export function PipelineMonitor({
   onToggleSchedule,
   onResetMock,
 }: PipelineMonitorProps) {
+  const [selectedAgent, setSelectedAgent] = React.useState<string | null>(null);
   const logEndRef = useRef<HTMLDivElement | null>(null);
+
+  const visibleLogs = React.useMemo(
+    () => (selectedAgent ? logs.filter((l) => l.agent === selectedAgent) : logs),
+    [logs, selectedAgent]
+  );
 
   useEffect(() => {
     logEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [logs.length]);
+  }, [visibleLogs.length]);
 
   return (
     <div className="space-y-6">
@@ -117,7 +123,7 @@ export function PipelineMonitor({
               className="inline-flex items-center gap-2 rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-zinc-950 shadow-sm transition hover:bg-emerald-400 active:scale-[0.99] cursor-pointer"
             >
               <Play className="h-4 w-4 fill-current" />
-              Run Pipeline Now
+              {mockMode ? "Run Test Demo" : "Find Live Jobs"}
             </button>
           ) : (
             <button
@@ -129,6 +135,16 @@ export function PipelineMonitor({
               Stop Pipeline
             </button>
           )}
+
+          <a
+            href="https://docs.google.com/spreadsheets/d/1MIFNWhHAWwZfOSoDXl7qsDYgjUYq_E_zPK7A4XG7ocE"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-800 bg-zinc-900/70 px-3 py-2 text-xs font-medium text-emerald-300 transition hover:border-emerald-500/40 hover:bg-zinc-800"
+          >
+            <FileText className="h-3.5 w-3.5" />
+            Google Sheets
+          </a>
 
           {mockMode && (
             <button
@@ -218,8 +234,8 @@ export function PipelineMonitor({
         </div>
       )}
 
-      {/* 4-Card Agent Pipeline */}
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+      {/* 5-Card Agent Pipeline (Click any card to filter its logs) */}
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
         {snapshot.agents.map((agent, idx) => {
           const pct =
             agent.items_total > 0
@@ -227,24 +243,30 @@ export function PipelineMonitor({
               : agent.status === "COMPLETED"
               ? 100
               : 0;
+          const isSelected = selectedAgent === agent.name;
 
           return (
             <div key={agent.name} className="relative flex items-stretch">
-              <div
-                className={`flex w-full flex-col justify-between rounded-xl border p-4 transition-colors ${
-                  agent.status === "RUNNING"
+              <button
+                type="button"
+                onClick={() => setSelectedAgent(isSelected ? null : agent.name)}
+                title="Click to filter logs for this agent"
+                className={`flex w-full flex-col justify-between rounded-xl border p-4 text-left transition-all cursor-pointer ${
+                  isSelected
+                    ? "border-violet-500/70 bg-[#16161d] ring-1 ring-violet-500/40"
+                    : agent.status === "RUNNING"
                     ? "border-amber-500/40 bg-[#141418]"
                     : agent.status === "COMPLETED"
-                    ? "border-emerald-500/25 bg-[#111114]"
+                    ? "border-emerald-500/25 bg-[#111114] hover:border-zinc-700"
                     : agent.status === "ERROR"
                     ? "border-rose-500/40 bg-[#141114]"
-                    : "border-zinc-800/80 bg-[#111114]"
+                    : "border-zinc-800/80 bg-[#111114] hover:border-zinc-700"
                 }`}
               >
                 <div>
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex items-center gap-2.5">
-                      <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-900">
+                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-900">
                         {AGENT_ICONS[agent.name]}
                       </div>
                       <div>
@@ -286,7 +308,7 @@ export function PipelineMonitor({
                     <span>TIME: {formatMs(agent.execution_time_ms)}</span>
                   </div>
                 </div>
-              </div>
+              </button>
 
               {idx < snapshot.agents.length - 1 && (
                 <div className="hidden xl:flex items-center justify-center pl-2 -mr-2 text-zinc-700">
@@ -300,25 +322,36 @@ export function PipelineMonitor({
 
       {/* Live Terminal Activity Log */}
       <div className="overflow-hidden rounded-xl border border-zinc-800/80 bg-[#0C0C0E]">
-        <div className="flex items-center justify-between border-b border-zinc-800/80 bg-[#111114] px-4 py-2.5">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-800/80 bg-[#111114] px-4 py-2.5">
           <div className="flex items-center gap-2 text-xs font-medium text-zinc-300">
             <Terminal className="h-3.5 w-3.5 text-emerald-400" />
             <span>Live Agent Activity Log</span>
+            {selectedAgent && (
+              <button
+                type="button"
+                onClick={() => setSelectedAgent(null)}
+                className="ml-2 inline-flex items-center gap-1 rounded-full bg-violet-500/15 px-2.5 py-0.5 text-[11px] text-violet-300 ring-1 ring-violet-500/30 hover:bg-violet-500/25 cursor-pointer"
+              >
+                Filtered: {selectedAgent} ✕
+              </button>
+            )}
           </div>
           <div className="flex items-center gap-2 text-[11px] font-mono text-zinc-500">
             <Activity className="h-3 w-3" />
-            <span>{logs.length} events</span>
+            <span>{visibleLogs.length} events</span>
           </div>
         </div>
 
         <div className="h-72 overflow-y-auto p-4 font-mono text-xs leading-6">
-          {logs.length === 0 ? (
+          {visibleLogs.length === 0 ? (
             <div className="flex h-full items-center justify-center text-zinc-600">
-              No agent activity yet. Click &ldquo;Run Pipeline Now&rdquo; to start.
+              {selectedAgent
+                ? `No logs yet for ${selectedAgent}. Click the filter badge above to show all.`
+                : "No agent activity yet. Click \"Find Live Jobs\" or \"Run Test Demo\" to start."}
             </div>
           ) : (
             <div className="space-y-1">
-              {logs.map((entry) => {
+              {visibleLogs.map((entry) => {
                 const time = new Date(entry.created_at).toLocaleTimeString([], {
                   hour12: false,
                   hour: "2-digit",
@@ -332,7 +365,9 @@ export function PipelineMonitor({
                     ? "text-amber-300"
                     : "text-zinc-300";
                 const agentColor =
-                  entry.agent === "scout"
+                  entry.agent === "category_planner"
+                    ? "text-violet-400"
+                    : entry.agent === "scout"
                     ? "text-sky-400"
                     : entry.agent === "recruiter"
                     ? "text-emerald-400"
@@ -345,7 +380,7 @@ export function PipelineMonitor({
                 return (
                   <div key={`${entry.id}-${entry.created_at}`} className="flex gap-3">
                     <span className="shrink-0 text-zinc-600">{time}</span>
-                    <span className={`w-22 shrink-0 uppercase ${agentColor}`}>
+                    <span className={`w-28 shrink-0 uppercase ${agentColor}`}>
                       [{entry.agent}]
                     </span>
                     <span className={`break-words ${levelColor}`}>{entry.message}</span>

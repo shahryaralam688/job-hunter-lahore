@@ -198,11 +198,44 @@ export function JobsView({ jobs, onStatusChange }: JobsViewProps) {
                         ))}
                       </select>
                     </td>
-                    <td className="px-4 py-3.5 align-top text-right">
-                      <span className="inline-flex items-center gap-1 rounded-md border border-zinc-800 bg-zinc-900 px-2.5 py-1 text-xs font-medium text-zinc-200">
-                        <Sparkles className="h-3 w-3 text-emerald-400" />
-                        Open Kit
-                      </span>
+                    <td
+                      className="px-4 py-3.5 align-top text-right"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <div className="inline-flex items-center gap-1.5">
+                        {job.cold_pitch && (
+                          <button
+                            type="button"
+                            onClick={() => copyText(job.cold_pitch, `row-pitch-${job.id}`)}
+                            title="Copy Cold Pitch"
+                            className="inline-flex items-center gap-1 rounded-md border border-zinc-800 bg-zinc-900 px-2 py-1 text-xs font-medium text-zinc-300 hover:border-zinc-700 hover:bg-zinc-800 cursor-pointer"
+                          >
+                            {copiedKey === `row-pitch-${job.id}` ? (
+                              <Check className="h-3 w-3 text-emerald-400" />
+                            ) : (
+                              <Copy className="h-3 w-3 text-zinc-400" />
+                            )}
+                            Pitch
+                          </button>
+                        )}
+                        <a
+                          href={job.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 rounded-md border border-sky-500/30 bg-sky-500/10 px-2 py-1 text-xs font-medium text-sky-300 hover:bg-sky-500/20"
+                        >
+                          <ExternalLink className="h-3 w-3" />
+                          Apply
+                        </a>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedJobId(job.id)}
+                          className="inline-flex items-center gap-1 rounded-md border border-zinc-800 bg-zinc-900 px-2.5 py-1 text-xs font-medium text-zinc-200 hover:border-emerald-500/40 cursor-pointer"
+                        >
+                          <Sparkles className="h-3 w-3 text-emerald-400" />
+                          Kit
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
