@@ -133,9 +133,15 @@ class PipelineManager:
             # 0. Category Planner (top Pakistan job categories before searching)
             cat_res = await category_planner.run(settings, mock_mode)
             category_queries = cat_res.get("queries", [])
+            categories = cat_res.get("categories", [])
 
             # 1. Scout
-            scout_res = await scout.run(settings, mock_mode, category_queries=category_queries)
+            scout_res = await scout.run(
+                settings,
+                mock_mode,
+                category_queries=category_queries,
+                categories=categories,
+            )
             total_scraped = scout_res["total_scraped"]
             new_jobs = scout_res["jobs"]
             total_new = len(new_jobs)

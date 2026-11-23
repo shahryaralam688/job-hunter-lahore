@@ -29,6 +29,37 @@ def _infer_work_type(title: str, location: str, description: str, is_remote: boo
     return "On-site"
 
 
+def _classify_job_category(job: Dict[str, Any], categories: List[Dict[str, Any]]) -> str:
+    text = f"{job.get('title', '')} {job.get('description', '')[:500]}".lower()
+    if any(k in text for k in ("bank", "fintech", "credit", "core banking", "payment")):
+        return "Banking & FinTech IT Department"
+    if any(k in text for k in ("lecturer", "professor", "faculty", "university", "lab engineer")):
+        return "University CS Lecturer / Lab Engineer"
+    if any(k in text for k in ("pitb", "nadra", "sbp", "assistant director", "govt", "government")):
+        return "Government & Public Sector IT"
+    if any(k in text for k in ("ios", "swift", "swiftui", "android", "flutter", "react native", "mobile")):
+        return "Mobile & iOS Engineering"
+    if any(k in text for k in ("ai ", "machine learning", "ml ", "llm", "genai", "data scientist")):
+        return "AI / Machine Learning & LLM Agents"
+    if any(k in text for k in ("devops", "cloud", "aws", "gcp", "kubernetes", "docker", "sre")):
+        return "Cloud, DevOps & SRE"
+    if any(k in text for k in ("cyber", "infosec", "security", "soc ")):
+        return "Cybersecurity & Bank InfoSec"
+    if any(k in text for k in ("qa ", "quality assurance", "selenium", "playwright", "automation test")):
+        return "QA Automation & Software Testing"
+    if any(k in text for k in ("unity", "ar ", "vr ", "arkit", "game")):
+        return "AR/VR, Unity & Spatial Computing"
+    if any(k in text for k in ("erp", "sap", "oracle", "database", "dba")):
+        return "ERP, SAP, Oracle & Enterprise IT"
+    if any(k in text for k in ("project manager", "product manager", "scrum")):
+        return "Technical Project / Product Management"
+    if job.get("work_type") == "Remote":
+        return "Global Remote Software Engineering"
+    if categories:
+        return str(categories[0].get("category", "Software & Full-Stack Engineering"))
+    return "Software & Full-Stack Engineering"
+
+
 async def _fetch_remoteok(limit: int = 12) -> List[Dict[str, Any]]:
     results: List[Dict[str, Any]] = []
     async with httpx.AsyncClient(timeout=12.0, follow_redirects=True) as client:
@@ -348,6 +379,7 @@ class ScoutAgent(BaseAgent):
         settings: Dict[str, Any],
         mock_mode: bool,
         category_queries: List[str] | None = None,
+        categories: List[Dict[str, Any]] | None = None,
     ) -> Dict[str, Any]:
         self.start_timer()
         self.check_cancelled()
@@ -500,6 +532,7 @@ class ScoutAgent(BaseAgent):
                 duplicates += 1
                 continue
             seen_urls.add(url)
+            job["category"] = _classify_job_category(job, categories or [])
             new_jobs.append(job)
 
         # Sync ALL newly discovered jobs to Google Sheet webhook if configured
