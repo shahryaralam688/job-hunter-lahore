@@ -6,7 +6,8 @@ from google import genai
 from google.genai import types
 
 from agents.base import BaseAgent
-from config import DEFAULT_SYSTEM_PROMPTS, GEMINI_API_KEY, GEMINI_MODEL
+from agents.llm_helper import generate_with_fallback
+from config import DEFAULT_SYSTEM_PROMPTS, GEMINI_API_KEY
 from models import AgentStatus, WriterKit
 
 
@@ -116,24 +117,22 @@ class WriterAgent(BaseAgent):
                     "3. Exactly 2 likely technical interview questions."
                 )
                 try:
-                    response = await asyncio.to_thread(
-                        client.models.generate_content,
-                        model=GEMINI_MODEL,
+                    raw_text = await generate_with_fallback(
                         contents=prompt,
-                        config=types.GenerateContentConfig(
-                            system_instruction=system_prompt,
-                            response_mime_type="application/json",
-                            response_schema=WriterKit,
-                            temperature=0.4,
-                        ),
+                        system_instruction=system_prompt,
+                        response_schema=WriterKit,
+                        temperature=0.4,
+                        timeout_seconds=20.0,
                     )
-                    kit = WriterKit.model_validate(json.loads(response.text))
+                    kit = WriterKit.model_validate(json.loads(raw_text)) if raw_text else _mock_write_kit(job)
+                except asyncio.CancelledError:
+                    raise
                 except Exception as exc:
                     await self.log(
-                        f"Writer failed for {job['title']} @ {job['company']}: {exc}",
-                        level="ERROR",
+                        f"Writer fallback used for {job['title']} @ {job['company']} ({exc})",
+                        level="WARN",
                     )
-                    continue
+                    kit = _mock_write_kit(job)
 
             enriched = {
                 **job,

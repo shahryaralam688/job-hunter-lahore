@@ -101,7 +101,9 @@ class PipelineManager:
         if not self._is_running:
             return {"stopped": False, "reason": "Pipeline is not running."}
         self._cancel_requested = True
-        await self.emit_log("pipeline", "WARN", "Stop requested — halting agents at next checkpoint...")
+        if self._task and not self._task.done():
+            self._task.cancel()
+        await self.emit_log("pipeline", "WARN", "Stop requested — halting agents immediately...")
         return {"stopped": True, "run_id": self._current_run_id}
 
     async def _execute(self, run_id: int, settings: Dict[str, Any], mock_mode: bool) -> None:
@@ -156,10 +158,10 @@ class PipelineManager:
                 f"Pipeline Run #{run_id} completed: {total_scraped} scraped, {total_new} new, {total_shortlisted} shortlisted.",
             )
 
-        except PipelineCancelled as exc:
+        except (PipelineCancelled, asyncio.CancelledError) as exc:
             final_status = "STOPPED"
-            error_message = str(exc)
-            await self.emit_log("pipeline", "WARN", f"Pipeline Run #{run_id} stopped: {exc}")
+            error_message = str(exc) or "Stopped by user"
+            await self.emit_log("pipeline", "WARN", f"Pipeline Run #{run_id} stopped.")
             for snap in self.agents.values():
                 if snap.status == AgentStatus.RUNNING:
                     snap.status = AgentStatus.IDLE
