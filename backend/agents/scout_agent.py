@@ -1,5 +1,9 @@
 import asyncio
+import xml.etree.ElementTree as ET
 from typing import Any, Dict, List, Set
+
+import httpx
+from bs4 import BeautifulSoup
 
 from agents.base import BaseAgent
 from database import url_exists
@@ -16,6 +20,143 @@ def _infer_work_type(title: str, location: str, description: str, is_remote: boo
     if "hybrid" in combined:
         return "Hybrid"
     return "On-site"
+
+
+async def _fetch_remoteok(limit: int = 12) -> List[Dict[str, Any]]:
+    results: List[Dict[str, Any]] = []
+    async with httpx.AsyncClient(timeout=12.0, follow_redirects=True) as client:
+        resp = await client.get(
+            "https://remoteok.com/api",
+            headers={"User-Agent": "JobHunterLahore/1.0"},
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        for item in data[1:]:
+            if not isinstance(item, dict):
+                continue
+            url = str(item.get("url") or item.get("apply_url") or "").strip()
+            title = str(item.get("position") or "").strip()
+            if not url or not title:
+                continue
+            results.append(
+                {
+                    "title": title,
+                    "company": str(item.get("company") or "Remote Company"),
+                    "location": str(item.get("location") or "Global Remote"),
+                    "work_type": "Remote",
+                    "url": url,
+                    "source": "remoteok",
+                    "description": BeautifulSoup(str(item.get("description") or ""), "html.parser").get_text(" ", strip=True)[:6000],
+                    "posted_at": str(item.get("date") or ""),
+                }
+            )
+            if len(results) >= limit:
+                break
+    return results
+
+
+async def _fetch_remotive(limit: int = 12) -> List[Dict[str, Any]]:
+    results: List[Dict[str, Any]] = []
+    async with httpx.AsyncClient(timeout=12.0, follow_redirects=True) as client:
+        resp = await client.get("https://remotive.com/api/remote-jobs?category=software-dev&limit=20")
+        resp.raise_for_status()
+        jobs = resp.json().get("jobs", [])
+        for item in jobs:
+            url = str(item.get("url") or "").strip()
+            title = str(item.get("title") or "").strip()
+            if not url or not title:
+                continue
+            results.append(
+                {
+                    "title": title,
+                    "company": str(item.get("company_name") or "Remote Company"),
+                    "location": str(item.get("candidate_required_location") or "Worldwide Remote"),
+                    "work_type": "Remote",
+                    "url": url,
+                    "source": "remotive",
+                    "description": BeautifulSoup(str(item.get("description") or ""), "html.parser").get_text(" ", strip=True)[:6000],
+                    "posted_at": str(item.get("publication_date") or ""),
+                }
+            )
+            if len(results) >= limit:
+                break
+    return results
+
+
+async def _fetch_weworkremotely(limit: int = 10) -> List[Dict[str, Any]]:
+    results: List[Dict[str, Any]] = []
+    async with httpx.AsyncClient(timeout=12.0, follow_redirects=True) as client:
+        resp = await client.get("https://weworkremotely.com/categories/remote-programming-jobs.rss")
+        resp.raise_for_status()
+        root = ET.fromstring(resp.text)
+        for item in root.findall("./channel/item"):
+            title = (item.findtext("title") or "").strip()
+            url = (item.findtext("link") or "").strip()
+            desc = BeautifulSoup(item.findtext("description") or "", "html.parser").get_text(" ", strip=True)
+            if not url or not title:
+                continue
+            company = title.split(":", 1)[0].strip() if ":" in title else "WeWorkRemotely"
+            clean_title = title.split(":", 1)[1].strip() if ":" in title else title
+            results.append(
+                {
+                    "title": clean_title,
+                    "company": company,
+                    "location": "Remote",
+                    "work_type": "Remote",
+                    "url": url,
+                    "source": "weworkremotely",
+                    "description": desc[:6000],
+                    "posted_at": (item.findtext("pubDate") or "").strip(),
+                }
+            )
+            if len(results) >= limit:
+                break
+    return results
+
+
+async def _fetch_jobz_pk(limit: int = 12) -> List[Dict[str, Any]]:
+    results: List[Dict[str, Any]] = []
+    urls = [
+        "https://www.jobz.pk/it-software-jobs/",
+        "https://www.jobz.pk/jobs-in-lahore/",
+    ]
+    async with httpx.AsyncClient(
+        timeout=12.0,
+        follow_redirects=True,
+        headers={"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36"},
+    ) as client:
+        for page_url in urls:
+            try:
+                resp = await client.get(page_url)
+                if resp.status_code != 200:
+                    continue
+                soup = BeautifulSoup(resp.text, "html.parser")
+                for a in soup.select("a[href]"):
+                    href = str(a.get("href") or "").strip()
+                    text = a.get_text(" ", strip=True)
+                    if (
+                        "jobz.pk" in href
+                        and href.endswith(".html")
+                        and len(text) > 12
+                        and not any(r["url"] == href for r in results)
+                    ):
+                        results.append(
+                            {
+                                "title": text[:160],
+                                "company": "Pakistan Employer (Jobz.pk)",
+                                "location": "Pakistan",
+                                "work_type": "On-site",
+                                "url": href,
+                                "source": "jobz.pk",
+                                "description": f"{text} — Listed on Jobz.pk Pakistan.",
+                                "posted_at": "",
+                            }
+                        )
+                    if len(results) >= limit:
+                        break
+            except Exception:
+                continue
+    return results
 
 
 class ScoutAgent(BaseAgent):
@@ -37,7 +178,7 @@ class ScoutAgent(BaseAgent):
 
         await self.set_state(
             AgentStatus.RUNNING,
-            f"Scanning {'mock feed' if mock_mode else 'LinkedIn, Indeed & Google Jobs'} across Pakistan",
+            f"Scanning {'mock feed' if mock_mode else 'LinkedIn, Indeed, Google, Glassdoor & APIs'}",
             0,
             len(category_queries or keywords),
         )
@@ -74,9 +215,10 @@ class ScoutAgent(BaseAgent):
                     {"location": "Pakistan", "is_remote": True, "label": "Remote"},
                 ]
 
-            total_steps = len(query_groups) * len(search_targets)
+            total_steps = len(query_groups) * len(search_targets) + 4
             step = 0
 
+            # Layer 1: jobspy (LinkedIn, Indeed, Google Jobs, Glassdoor)
             for target in search_targets:
                 for term in query_groups:
                     self.check_cancelled()
@@ -87,11 +229,13 @@ class ScoutAgent(BaseAgent):
                         step,
                         total_steps,
                     )
-                    await self.log(f"Deep scraping LinkedIn, Indeed & Google: '{term}' in {target['label']} (last {hours_old}h)")
+                    await self.log(
+                        f"Deep scraping LinkedIn, Indeed, Google & Glassdoor: '{term}' in {target['label']} (last {hours_old}h)"
+                    )
                     try:
                         df = await asyncio.to_thread(
                             scrape_jobs,
-                            site_name=["linkedin", "indeed", "google"],
+                            site_name=["linkedin", "indeed", "google", "glassdoor"],
                             search_term=term,
                             location=target["location"],
                             results_wanted=10,
@@ -131,6 +275,29 @@ class ScoutAgent(BaseAgent):
                             f"Scraper warning for '{term}' ({target['label']}): {exc}",
                             level="WARN",
                         )
+
+            # Layer 2: Lightweight Public APIs & Pakistan Local Feed
+            feed_fetchers = [
+                ("RemoteOK API", _fetch_remoteok),
+                ("Remotive API", _fetch_remotive),
+                ("WeWorkRemotely RSS", _fetch_weworkremotely),
+                ("Jobz.pk Pakistan", _fetch_jobz_pk),
+            ]
+            for feed_name, fetcher in feed_fetchers:
+                self.check_cancelled()
+                step += 1
+                await self.set_state(
+                    AgentStatus.RUNNING,
+                    f"Fetching {feed_name}...",
+                    step,
+                    total_steps,
+                )
+                try:
+                    fetched = await fetcher()
+                    raw_jobs.extend(fetched)
+                    await self.log(f"Fetched {len(fetched)} postings from {feed_name}.")
+                except Exception as exc:
+                    await self.log(f"{feed_name} fetch warning: {exc}", level="WARN")
 
         # Deduplicate within current batch and against SQLite
         seen_urls: Set[str] = set()

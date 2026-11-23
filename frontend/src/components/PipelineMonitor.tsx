@@ -41,7 +41,7 @@ const AGENT_ICONS: Record<AgentState["name"], React.ReactNode> = {
 
 const AGENT_SUBTITLES: Record<AgentState["name"], string> = {
   category_planner: "Pakistan Top Categories · Bank · Univ · Tech",
-  scout: "LinkedIn, Indeed & Google · Pakistan",
+  scout: "LinkedIn · Indeed · Google · Glassdoor · RemoteOK · Jobz.pk",
   recruiter: "Gemini AI · CV Scoring",
   writer: "ATS Bullets · Pitch · Interview Qs",
   dispatcher: "SQLite Persistence · Google Sheets",
