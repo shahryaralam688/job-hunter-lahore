@@ -6,6 +6,13 @@ import httpx
 from bs4 import BeautifulSoup
 
 from agents.base import BaseAgent
+from config import (
+    ADZUNA_APP_ID,
+    ADZUNA_APP_KEY,
+    GOOGLE_SHEET_WEBHOOK_URL,
+    JOOBLE_API_KEY,
+    RAPIDAPI_KEY,
+)
 from database import url_exists
 from mock_data import get_mock_jobs
 from models import AgentStatus
@@ -114,6 +121,179 @@ async def _fetch_weworkremotely(limit: int = 10) -> List[Dict[str, Any]]:
     return results
 
 
+async def _fetch_arbeitnow(limit: int = 15) -> List[Dict[str, Any]]:
+    results: List[Dict[str, Any]] = []
+    async with httpx.AsyncClient(timeout=12.0, follow_redirects=True) as client:
+        resp = await client.get("https://www.arbeitnow.com/api/job-board-api")
+        resp.raise_for_status()
+        for item in resp.json().get("data", []):
+            url = str(item.get("url") or "").strip()
+            title = str(item.get("title") or "").strip()
+            if not url or not title:
+                continue
+            is_remote = bool(item.get("remote", False))
+            loc = str(item.get("location") or ("Remote" if is_remote else "Global"))
+            desc = BeautifulSoup(str(item.get("description") or ""), "html.parser").get_text(" ", strip=True)
+            results.append(
+                {
+                    "title": title,
+                    "company": str(item.get("company_name") or "Tech Company"),
+                    "location": loc,
+                    "work_type": "Remote" if is_remote else _infer_work_type(title, loc, desc, False),
+                    "url": url,
+                    "source": "arbeitnow",
+                    "description": desc[:6000],
+                    "posted_at": str(item.get("created_at") or ""),
+                }
+            )
+            if len(results) >= limit:
+                break
+    return results
+
+
+async def _fetch_himalayas(limit: int = 15) -> List[Dict[str, Any]]:
+    results: List[Dict[str, Any]] = []
+    async with httpx.AsyncClient(timeout=12.0, follow_redirects=True) as client:
+        resp = await client.get("https://himalayas.app/jobs/api?limit=25")
+        resp.raise_for_status()
+        for item in resp.json().get("jobs", []):
+            url = str(item.get("applicationLink") or item.get("guid") or "").strip()
+            title = str(item.get("title") or "").strip()
+            if not url or not title:
+                continue
+            desc = BeautifulSoup(str(item.get("description") or item.get("excerpt") or ""), "html.parser").get_text(" ", strip=True)
+            results.append(
+                {
+                    "title": title,
+                    "company": str(item.get("companyName") or "Remote Company"),
+                    "location": ", ".join(item.get("locationRestrictions") or []) or "Worldwide Remote",
+                    "work_type": "Remote",
+                    "url": url,
+                    "source": "himalayas",
+                    "description": desc[:6000],
+                    "posted_at": str(item.get("pubDate") or ""),
+                }
+            )
+            if len(results) >= limit:
+                break
+    return results
+
+
+async def _fetch_jooble(limit: int = 25) -> List[Dict[str, Any]]:
+    if not JOOBLE_API_KEY:
+        return []
+    results: List[Dict[str, Any]] = []
+    queries = [
+        {"keywords": "Software Engineer", "location": "Pakistan"},
+        {"keywords": "IT Officer Developer", "location": "Pakistan"},
+        {"keywords": "Remote Software Developer", "location": ""},
+    ]
+    async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
+        for q in queries:
+            try:
+                resp = await client.post(
+                    f"https://jooble.org/api/{JOOBLE_API_KEY}",
+                    json=q,
+                    headers={"Content-Type": "application/json"},
+                )
+                if resp.status_code != 200:
+                    continue
+                for item in resp.json().get("jobs", []):
+                    url = str(item.get("link") or "").strip()
+                    title = str(item.get("title") or "").strip()
+                    if not url or not title:
+                        continue
+                    loc = str(item.get("location") or q["location"] or "Remote")
+                    snippet = BeautifulSoup(str(item.get("snippet") or ""), "html.parser").get_text(" ", strip=True)
+                    results.append(
+                        {
+                            "title": title,
+                            "company": str(item.get("company") or "Jooble Employer"),
+                            "location": loc,
+                            "work_type": _infer_work_type(title, loc, snippet, "remote" in loc.lower()),
+                            "url": url,
+                            "source": "jooble",
+                            "description": snippet[:6000],
+                            "posted_at": str(item.get("updated") or ""),
+                        }
+                    )
+                    if len(results) >= limit:
+                        return results
+            except Exception:
+                continue
+    return results
+
+
+async def _fetch_adzuna(limit: int = 15) -> List[Dict[str, Any]]:
+    if not (ADZUNA_APP_ID and ADZUNA_APP_KEY):
+        return []
+    results: List[Dict[str, Any]] = []
+    async with httpx.AsyncClient(timeout=12.0, follow_redirects=True) as client:
+        resp = await client.get(
+            "https://api.adzuna.com/v1/api/jobs/gb/search/1",
+            params={
+                "app_id": ADZUNA_APP_ID,
+                "app_key": ADZUNA_APP_KEY,
+                "what": "remote software engineer",
+                "results_per_page": limit,
+            },
+        )
+        resp.raise_for_status()
+        for item in resp.json().get("results", []):
+            url = str(item.get("redirect_url") or "").strip()
+            title = str(item.get("title") or "").strip()
+            if not url or not title:
+                continue
+            results.append(
+                {
+                    "title": title,
+                    "company": str((item.get("company") or {}).get("display_name") or "Adzuna Employer"),
+                    "location": str((item.get("location") or {}).get("display_name") or "Remote"),
+                    "work_type": "Remote",
+                    "url": url,
+                    "source": "adzuna",
+                    "description": str(item.get("description") or "")[:6000],
+                    "posted_at": str(item.get("created") or ""),
+                }
+            )
+    return results
+
+
+async def _fetch_jsearch(limit: int = 15) -> List[Dict[str, Any]]:
+    if not RAPIDAPI_KEY:
+        return []
+    results: List[Dict[str, Any]] = []
+    async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
+        resp = await client.get(
+            "https://jsearch.p.rapidapi.com/search",
+            params={"query": "Software Engineer in Pakistan", "num_pages": "1"},
+            headers={
+                "X-RapidAPI-Key": RAPIDAPI_KEY,
+                "X-RapidAPI-Host": "jsearch.p.rapidapi.com",
+            },
+        )
+        resp.raise_for_status()
+        for item in resp.json().get("data", [])[:limit]:
+            url = str(item.get("job_apply_link") or item.get("job_google_link") or "").strip()
+            title = str(item.get("job_title") or "").strip()
+            if not url or not title:
+                continue
+            loc = ", ".join(filter(None, [item.get("job_city"), item.get("job_country")])) or "Pakistan"
+            results.append(
+                {
+                    "title": title,
+                    "company": str(item.get("employer_name") or "Employer"),
+                    "location": loc,
+                    "work_type": "Remote" if item.get("job_is_remote") else "On-site",
+                    "url": url,
+                    "source": "jsearch",
+                    "description": str(item.get("job_description") or "")[:6000],
+                    "posted_at": str(item.get("job_posted_at_datetime_utc") or ""),
+                }
+            )
+    return results
+
+
 async def _fetch_jobz_pk(limit: int = 12) -> List[Dict[str, Any]]:
     results: List[Dict[str, Any]] = []
     urls = [
@@ -178,7 +358,7 @@ class ScoutAgent(BaseAgent):
 
         await self.set_state(
             AgentStatus.RUNNING,
-            f"Scanning {'mock feed' if mock_mode else 'LinkedIn, Indeed, Google, Glassdoor & APIs'}",
+            f"Harvesting {'mock feed' if mock_mode else 'all IT portals & free APIs'}",
             0,
             len(category_queries or keywords),
         )
@@ -215,10 +395,42 @@ class ScoutAgent(BaseAgent):
                     {"location": "Pakistan", "is_remote": True, "label": "Remote"},
                 ]
 
-            total_steps = len(query_groups) * len(search_targets) + 4
+            feed_fetchers = [
+                ("Jooble API", _fetch_jooble),
+                ("Arbeitnow API", _fetch_arbeitnow),
+                ("Himalayas API", _fetch_himalayas),
+                ("RemoteOK API", _fetch_remoteok),
+                ("Remotive API", _fetch_remotive),
+                ("WeWorkRemotely RSS", _fetch_weworkremotely),
+                ("Jobz.pk Pakistan", _fetch_jobz_pk),
+            ]
+            if ADZUNA_APP_ID and ADZUNA_APP_KEY:
+                feed_fetchers.append(("Adzuna API", _fetch_adzuna))
+            if RAPIDAPI_KEY:
+                feed_fetchers.append(("JSearch RapidAPI", _fetch_jsearch))
+
+            total_steps = len(query_groups) * len(search_targets) + len(feed_fetchers)
             step = 0
 
-            # Layer 1: jobspy (LinkedIn, Indeed, Google Jobs, Glassdoor)
+            # Layer 1: Free APIs & Pakistan Local Feed (Fastest first)
+            for feed_name, fetcher in feed_fetchers:
+                self.check_cancelled()
+                step += 1
+                await self.set_state(
+                    AgentStatus.RUNNING,
+                    f"Fetching {feed_name}...",
+                    step,
+                    total_steps,
+                )
+                try:
+                    fetched = await fetcher()
+                    raw_jobs.extend(fetched)
+                    if fetched:
+                        await self.log(f"Fetched {len(fetched)} postings from {feed_name}.")
+                except Exception as exc:
+                    await self.log(f"{feed_name} fetch warning: {exc}", level="WARN")
+
+            # Layer 2: jobspy (LinkedIn, Indeed, Google Jobs, Glassdoor)
             for target in search_targets:
                 for term in query_groups:
                     self.check_cancelled()
@@ -276,30 +488,7 @@ class ScoutAgent(BaseAgent):
                             level="WARN",
                         )
 
-            # Layer 2: Lightweight Public APIs & Pakistan Local Feed
-            feed_fetchers = [
-                ("RemoteOK API", _fetch_remoteok),
-                ("Remotive API", _fetch_remotive),
-                ("WeWorkRemotely RSS", _fetch_weworkremotely),
-                ("Jobz.pk Pakistan", _fetch_jobz_pk),
-            ]
-            for feed_name, fetcher in feed_fetchers:
-                self.check_cancelled()
-                step += 1
-                await self.set_state(
-                    AgentStatus.RUNNING,
-                    f"Fetching {feed_name}...",
-                    step,
-                    total_steps,
-                )
-                try:
-                    fetched = await fetcher()
-                    raw_jobs.extend(fetched)
-                    await self.log(f"Fetched {len(fetched)} postings from {feed_name}.")
-                except Exception as exc:
-                    await self.log(f"{feed_name} fetch warning: {exc}", level="WARN")
-
-        # Deduplicate within current batch and against SQLite
+        # Deduplicate against current batch and SQLite
         seen_urls: Set[str] = set()
         new_jobs: List[Dict[str, Any]] = []
         duplicates = 0
@@ -313,18 +502,35 @@ class ScoutAgent(BaseAgent):
             seen_urls.add(url)
             new_jobs.append(job)
 
+        # Sync ALL newly discovered jobs to Google Sheet webhook if configured
+        if GOOGLE_SHEET_WEBHOOK_URL and new_jobs and not mock_mode:
+            try:
+                async with httpx.AsyncClient(timeout=15.0) as client:
+                    await client.post(
+                        GOOGLE_SHEET_WEBHOOK_URL,
+                        json={"type": "raw_jobs", "jobs": new_jobs},
+                    )
+                await self.log(f"Listed {len(new_jobs)} new IT jobs in Google Sheet master list.")
+            except Exception as exc:
+                await self.log(f"Google Sheet raw-jobs sync skipped ({exc})", level="WARN")
+
+        # Pass first 30 new jobs forward to Recruiter/Writer pipeline
+        batch_for_pipeline = new_jobs[:30]
+
         await self.log(
-            f"Scout complete: {len(raw_jobs)} scraped, {duplicates} duplicates skipped, {len(new_jobs)} new jobs queued."
+            f"Scout complete: {len(raw_jobs)} scraped, {duplicates} duplicates skipped, "
+            f"{len(new_jobs)} new jobs found -> passing first {len(batch_for_pipeline)} to next agents."
         )
         await self.set_state(
             AgentStatus.COMPLETED,
-            f"Queued {len(new_jobs)} new jobs ({duplicates} duplicates skipped)",
-            len(new_jobs),
+            f"{len(new_jobs)} new jobs ({len(batch_for_pipeline)} queued for details, {duplicates} skipped)",
+            len(batch_for_pipeline),
             len(raw_jobs),
         )
 
         return {
             "total_scraped": len(raw_jobs),
             "duplicates_skipped": duplicates,
-            "jobs": new_jobs,
+            "total_new_found": len(new_jobs),
+            "jobs": batch_for_pipeline,
         }
