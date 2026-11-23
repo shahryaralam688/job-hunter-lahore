@@ -26,6 +26,14 @@ EXCLUDE_TITLE_TERMS = (
     "plumbing", "plumber", "draughtsman", "hvac", "mechanical", "civil engineer",
     "electrical engineer", "driver", "chef", "cook", "nurse", "pharmacist",
     "housekeeping", "security guard", "receptionist", "call center",
+    "principal ", "distinguished ", "vp of engineering", "chief technology",
+)
+
+INELIGIBLE_REGION_TERMS = (
+    "us citizens only", "us citizen only", "u.s. citizens", "us work authorization",
+    "must reside in the us", "united states only", "us only", "security clearance",
+    "eu citizenship", "eu work permit", "uk only", "canada only", "germany only",
+    "10+ years", "12+ years", "15+ years",
 )
 
 RELEVANT_TERMS = (
@@ -40,13 +48,19 @@ RELEVANT_TERMS = (
 def _prefilter_score(job: Dict[str, Any], cv_text: str) -> float:
     title = job.get("title", "").lower()
     desc = job.get("description", "").lower()
+    loc = job.get("location", "").lower()
+    combined = f"{title} {loc} {desc[:1500]}"
+
     if any(bad in title for bad in EXCLUDE_TITLE_TERMS):
         return -1.0
-    combined = f"{title} {desc[:1200]}"
+    if any(region in combined for region in INELIGIBLE_REGION_TERMS):
+        return -1.0
+
     hits = sum(1 for kw in RELEVANT_TERMS if kw in combined)
     cv_words = {w.strip(".,-()/").lower() for w in cv_text.split() if len(w) > 3}
     cv_hits = sum(1 for w in ("swift", "swiftui", "react", "next", "typescript", "python", "fastapi", "unity", "docker") if w in combined and w in cv_words)
-    return hits + cv_hits * 2.0
+    pk_bonus = 3.0 if any(p in combined for p in ("pakistan", "lahore", "karachi", "islamabad", "worldwide", "anywhere", "emea")) else 0.0
+    return hits + cv_hits * 2.0 + pk_bonus
 
 
 def _local_fallback_evaluate(job: Dict[str, Any], cv_text: str) -> RecruiterEvaluation:

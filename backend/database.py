@@ -132,6 +132,19 @@ def url_exists(url: str) -> bool:
     return row is not None
 
 
+def title_company_exists(title: str, company: str) -> bool:
+    t = " ".join(title.lower().split())
+    c = " ".join(company.lower().split())
+    if not t or not c or c in ("unknown company", "employer", "pakistan employer (jobz.pk)"):
+        return False
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT 1 FROM jobs WHERE lower(trim(title)) = ? AND lower(trim(company)) = ? LIMIT 1",
+            (t, c),
+        ).fetchone()
+    return row is not None
+
+
 def save_job(job: Dict[str, Any]) -> Optional[int]:
     with get_conn() as conn:
         cur = conn.execute(

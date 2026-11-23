@@ -13,7 +13,7 @@ from config import (
     JOOBLE_API_KEY,
     RAPIDAPI_KEY,
 )
-from database import url_exists
+from database import title_company_exists, url_exists
 from mock_data import get_mock_jobs
 from models import AgentStatus
 
@@ -520,18 +520,30 @@ class ScoutAgent(BaseAgent):
                             level="WARN",
                         )
 
-        # Deduplicate against current batch and SQLite
+        # Deduplicate against current batch and SQLite (by URL and Title+Company)
         seen_urls: Set[str] = set()
+        seen_tc: Set[tuple[str, str]] = set()
         new_jobs: List[Dict[str, Any]] = []
         duplicates = 0
 
         for job in raw_jobs:
             self.check_cancelled()
             url = job["url"]
-            if url in seen_urls or url_exists(url):
+            tc_key = (
+                " ".join(job.get("title", "").lower().split()),
+                " ".join(job.get("company", "").lower().split()),
+            )
+            is_generic_co = tc_key[1] in ("", "unknown company", "employer", "pakistan employer (jobz.pk)")
+            if (
+                url in seen_urls
+                or url_exists(url)
+                or (not is_generic_co and (tc_key in seen_tc or title_company_exists(tc_key[0], tc_key[1])))
+            ):
                 duplicates += 1
                 continue
             seen_urls.add(url)
+            if not is_generic_co:
+                seen_tc.add(tc_key)
             job["category"] = _classify_job_category(job, categories or [])
             new_jobs.append(job)
 
