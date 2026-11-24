@@ -5,6 +5,7 @@ from fastapi import WebSocket
 
 from agents.base import PipelineCancelled
 from agents.category_agent import CategoryAgent
+from agents.cv_analyzer_agent import CVAnalyzerAgent
 from agents.dispatcher_agent import DispatcherAgent
 from agents.recruiter_agent import RecruiterAgent
 from agents.scout_agent import ScoutAgent
@@ -27,6 +28,7 @@ class PipelineManager:
     @staticmethod
     def _fresh_agent_states() -> Dict[str, AgentStateSnapshot]:
         return {
+            "cv_analyzer": AgentStateSnapshot(name="cv_analyzer", label="CV Analyzer Agent"),
             "category_planner": AgentStateSnapshot(name="category_planner", label="Category Planner"),
             "scout": AgentStateSnapshot(name="scout", label="Scout Agent"),
             "recruiter": AgentStateSnapshot(name="recruiter", label="Recruiter Agent"),
@@ -124,38 +126,43 @@ class PipelineManager:
         is_cancelled = lambda: self._cancel_requested
 
         try:
+            cv_analyzer = CVAnalyzerAgent(self.emit_log, self.emit_state, is_cancelled)
             category_planner = CategoryAgent(self.emit_log, self.emit_state, is_cancelled)
             scout = ScoutAgent(self.emit_log, self.emit_state, is_cancelled)
             recruiter = RecruiterAgent(self.emit_log, self.emit_state, is_cancelled)
             writer = WriterAgent(self.emit_log, self.emit_state, is_cancelled)
             dispatcher = DispatcherAgent(self.emit_log, self.emit_state, is_cancelled)
 
-            # 0. Category Planner (top Pakistan job categories before searching)
-            cat_res = await category_planner.run(settings, mock_mode)
+            # 0. CV Analyzer (deep CV scan, possibilities, search keywords & full context)
+            cv_analysis = await cv_analyzer.run(settings, mock_mode)
+
+            # 1. Category Planner (top Pakistan job categories informed by CV analysis)
+            cat_res = await category_planner.run(settings, mock_mode, cv_analysis=cv_analysis)
             category_queries = cat_res.get("queries", [])
             categories = cat_res.get("categories", [])
 
-            # 1. Scout
+            # 2. Scout
             scout_res = await scout.run(
                 settings,
                 mock_mode,
                 category_queries=category_queries,
                 categories=categories,
+                cv_analysis=cv_analysis,
             )
             total_scraped = scout_res["total_scraped"]
             new_jobs = scout_res["jobs"]
             total_new = len(new_jobs)
 
-            # 2. Recruiter
-            recruiter_res = await recruiter.run(new_jobs, settings, mock_mode)
+            # 3. Recruiter
+            recruiter_res = await recruiter.run(new_jobs, settings, mock_mode, cv_analysis=cv_analysis)
             all_evaluated = recruiter_res["evaluated"]
             shortlisted = recruiter_res["shortlisted"]
             total_shortlisted = len(shortlisted)
 
-            # 3. Writer
+            # 4. Writer
             kits = await writer.run(shortlisted, settings, mock_mode)
 
-            # 4. Dispatcher
+            # 5. Dispatcher
             await dispatcher.run(run_id, all_evaluated, kits, settings)
 
             await self.emit_log(

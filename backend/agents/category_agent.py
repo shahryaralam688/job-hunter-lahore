@@ -114,13 +114,21 @@ class CategoryAgent(BaseAgent):
     name = "category_planner"
     label = "Category Planner Agent"
 
-    async def run(self, settings: Dict[str, Any], mock_mode: bool) -> Dict[str, Any]:
+    async def run(
+        self,
+        settings: Dict[str, Any],
+        mock_mode: bool,
+        cv_analysis: Dict[str, Any] | None = None,
+    ) -> Dict[str, Any]:
         self.start_timer()
         self.check_cancelled()
 
         cv_text: str = settings.get("cv_text", "")
         user_keywords: List[str] = settings.get("keywords", [])
         prompt_override: str = settings.get("prompts", {}).get("category_planner", "")
+        cv_keywords: List[str] = list((cv_analysis or {}).get("search_keywords", []))
+        cv_context: str = str((cv_analysis or {}).get("search_context_brief", "")).strip()
+        cv_possibilities: List[Dict[str, Any]] = list((cv_analysis or {}).get("job_possibilities", []))
 
         await self.set_state(
             AgentStatus.RUNNING,
@@ -130,7 +138,7 @@ class CategoryAgent(BaseAgent):
         )
 
         cache_key = hashlib.sha256(
-            f"{cv_text[:2500]}|{','.join(user_keywords)}|{prompt_override}".encode("utf-8")
+            f"{cv_text[:2500]}|{','.join(user_keywords)}|{','.join(cv_keywords[:10])}|{prompt_override}".encode("utf-8")
         ).hexdigest()[:16]
 
         categories = list(DEFAULT_ENGINEER_CATEGORIES)
@@ -139,20 +147,27 @@ class CategoryAgent(BaseAgent):
             categories = _CATEGORY_CACHE[cache_key]
             await self.log(f"Loaded {len(categories)} cached CV-tailored IT categories (0 API calls).")
         elif not mock_mode and GEMINI_API_KEY and GEMINI_API_KEY != "your_gemini_api_key_here":
-            await self.log("Analyzing your CV & keywords with resilient Gemini fallback to build high-hit queries...")
+            await self.log("Analyzing CV possibilities & keywords with Gemini fallback to build high-hit queries...")
             try:
                 sys_prompt = prompt_override or (
-                    "You are a Deep-Search Career Category Planner for a Software Engineer / CS graduate in Pakistan. "
-                    "Read the candidate's CV and generate 15 distinct IT/CS job categories across EVERY sector "
+                    "You are a Deep-Search Career Category Planner for Pakistan & Global Remote roles. "
+                    "Use the CV Analyzer context and candidate CV to generate 15 distinct job categories across EVERY sector "
                     "they can enter (Tech Houses, Bank IT Departments, University CS Lecturer/Lab Engineer, "
                     "Government/PITB/NADRA IT, Telecom, E-Commerce, AI/ML, Cloud/DevOps, Cybersecurity, ERP, "
                     "QA Automation, Technical PM, AR/Unity, and Global Remote). "
                     "CRITICAL: Each search query MUST be short (2 to 3 words max, e.g. 'Software Engineer', "
                     "'IT Officer Bank', 'CS Lecturer') so job portals return maximum real jobs. Never include non-IT roles."
                 )
+                possibilities_text = "\n".join(
+                    f"- {p.get('role_title')} ({p.get('fit_strength')}): {', '.join(p.get('search_keywords', []))}"
+                    for p in cv_possibilities[:8]
+                )
                 user_msg = (
+                    f"CV SEARCH CONTEXT BRIEF:\n{cv_context or 'Not provided'}\n\n"
+                    f"CV POSSIBILITIES:\n{possibilities_text or 'None'}\n\n"
                     f"CANDIDATE CV:\n{cv_text[:3000]}\n\n"
-                    f"USER KEYWORDS: {', '.join(user_keywords)}\n\n"
+                    f"USER KEYWORDS: {', '.join(user_keywords)}\n"
+                    f"CV ANALYZER KEYWORDS: {', '.join(cv_keywords)}\n\n"
                     "Return a JSON array of 15 objects with keys: "
                     "'category' (string), 'why_fit' (short string), and 'queries' (list of 2 concise 2-3 word job search strings)."
                 )
@@ -206,8 +221,8 @@ class CategoryAgent(BaseAgent):
                 len(categories),
             )
 
-        # Ensure user's own top keywords are always included as concise queries
-        for kw in user_keywords[:4]:
+        # Ensure CV-analyzer keywords and user's top keywords are always included as concise queries
+        for kw in cv_keywords[:8] + user_keywords[:4]:
             kw_clean = kw.strip()
             if kw_clean and kw_clean.lower() not in seen_q:
                 seen_q.add(kw_clean.lower())

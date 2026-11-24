@@ -3,13 +3,31 @@ export type AgentStatus = "IDLE" | "RUNNING" | "COMPLETED" | "ERROR";
 export type JobStatus = "New" | "Applied" | "Interview" | "Rejected";
 
 export interface AgentState {
-  name: "category_planner" | "scout" | "recruiter" | "writer" | "dispatcher";
+  name: "cv_analyzer" | "category_planner" | "scout" | "recruiter" | "writer" | "dispatcher";
   label: string;
   status: AgentStatus;
   current_task: string;
   items_processed: number;
   items_total: number;
   execution_time_ms: number;
+}
+
+export interface JobPossibility {
+  role_title: string;
+  fit_strength: string;
+  rationale: string;
+  search_keywords: string[];
+}
+
+export interface CVAnalysis {
+  candidate_summary: string;
+  seniority_level: string;
+  core_skills: string[];
+  domains: string[];
+  job_possibilities: JobPossibility[];
+  search_keywords: string[];
+  avoid_roles: string[];
+  search_context_brief: string;
 }
 
 export interface PipelineSnapshot {

@@ -10,6 +10,7 @@ import {
   Play,
   Radar,
   RotateCcw,
+  ScanSearch,
   Send,
   Square,
   Terminal,
@@ -32,6 +33,7 @@ interface PipelineMonitorProps {
 }
 
 const AGENT_ICONS: Record<AgentState["name"], React.ReactNode> = {
+  cv_analyzer: <ScanSearch className="h-4 w-4 text-cyan-400" />,
   category_planner: <Cpu className="h-4 w-4 text-violet-400" />,
   scout: <Radar className="h-4 w-4 text-sky-400" />,
   recruiter: <UserCheck className="h-4 w-4 text-emerald-400" />,
@@ -40,6 +42,7 @@ const AGENT_ICONS: Record<AgentState["name"], React.ReactNode> = {
 };
 
 const AGENT_SUBTITLES: Record<AgentState["name"], string> = {
+  cv_analyzer: "CV Deep Scan · Possibilities · Search Keywords",
   category_planner: "Pakistan Top Categories · Bank · Univ · Tech",
   scout: "LinkedIn · Indeed · Google · Glassdoor · RemoteOK · Jobz.pk",
   recruiter: "Gemini AI · CV Scoring",
@@ -234,8 +237,8 @@ export function PipelineMonitor({
         </div>
       )}
 
-      {/* 5-Card Agent Pipeline (Click any card to filter its logs) */}
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
+      {/* 6-Card Agent Pipeline (Click any card to filter its logs) */}
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
         {snapshot.agents.map((agent, idx) => {
           const pct =
             agent.items_total > 0
@@ -310,8 +313,8 @@ export function PipelineMonitor({
                 </div>
               </button>
 
-              {idx < snapshot.agents.length - 1 && (
-                <div className="hidden xl:flex items-center justify-center pl-2 -mr-2 text-zinc-700">
+              {idx < snapshot.agents.length - 1 && (idx + 1) % 3 !== 0 && (
+                <div className="hidden lg:flex items-center justify-center pl-2 -mr-2 text-zinc-700">
                   <ArrowRight className="h-4 w-4" />
                 </div>
               )}
@@ -365,7 +368,9 @@ export function PipelineMonitor({
                     ? "text-amber-300"
                     : "text-zinc-300";
                 const agentColor =
-                  entry.agent === "category_planner"
+                  entry.agent === "cv_analyzer"
+                    ? "text-cyan-400"
+                    : entry.agent === "category_planner"
                     ? "text-violet-400"
                     : entry.agent === "scout"
                     ? "text-sky-400"

@@ -81,3 +81,27 @@ class AgentStateSnapshot(BaseModel):
 
 class PipelineRunRequest(BaseModel):
     mock_mode: Optional[bool] = None
+
+
+class JobPossibility(BaseModel):
+    role_title: str = Field(..., description="Viable job title/direction based on the CV")
+    fit_strength: str = Field(..., description="Primary, Secondary, or Adjacent")
+    rationale: str = Field(..., description="Why this CV qualifies for this possibility")
+    search_keywords: List[str] = Field(default_factory=list, description="2-3 concise portal search queries")
+
+
+class CVAnalysisResult(BaseModel):
+    candidate_summary: str
+    seniority_level: str
+    core_skills: List[str] = Field(default_factory=list)
+    domains: List[str] = Field(default_factory=list)
+    job_possibilities: List[JobPossibility] = Field(default_factory=list)
+    search_keywords: List[str] = Field(default_factory=list)
+    avoid_roles: List[str] = Field(default_factory=list)
+    search_context_brief: str
+
+
+class CVAnalyzeRequest(BaseModel):
+    cv_text: Optional[str] = None
+    keywords: Optional[List[str]] = None
+    mock_mode: Optional[bool] = None

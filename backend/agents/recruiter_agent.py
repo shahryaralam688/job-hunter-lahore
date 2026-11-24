@@ -45,7 +45,11 @@ RELEVANT_TERMS = (
 )
 
 
-def _prefilter_score(job: Dict[str, Any], cv_text: str) -> float:
+def _prefilter_score(
+    job: Dict[str, Any],
+    cv_text: str,
+    cv_skills: List[str] | None = None,
+) -> float:
     title = job.get("title", "").lower()
     desc = job.get("description", "").lower()
     loc = job.get("location", "").lower()
@@ -58,7 +62,9 @@ def _prefilter_score(job: Dict[str, Any], cv_text: str) -> float:
 
     hits = sum(1 for kw in RELEVANT_TERMS if kw in combined)
     cv_words = {w.strip(".,-()/").lower() for w in cv_text.split() if len(w) > 3}
-    cv_hits = sum(1 for w in ("swift", "swiftui", "react", "next", "typescript", "python", "fastapi", "unity", "docker") if w in combined and w in cv_words)
+    dynamic_skills = {s.lower() for s in (cv_skills or []) if len(s.strip()) > 1}
+    target_tokens = dynamic_skills | {"swift", "swiftui", "react", "next", "typescript", "python", "fastapi", "unity", "docker"}
+    cv_hits = sum(1 for w in target_tokens if w in combined and (w in cv_words or w in dynamic_skills))
     pk_bonus = 3.0 if any(p in combined for p in ("pakistan", "lahore", "karachi", "islamabad", "worldwide", "anywhere", "emea")) else 0.0
     return hits + cv_hits * 2.0 + pk_bonus
 
@@ -116,6 +122,7 @@ class RecruiterAgent(BaseAgent):
         jobs: List[Dict[str, Any]],
         settings: Dict[str, Any],
         mock_mode: bool,
+        cv_analysis: Dict[str, Any] | None = None,
     ) -> Dict[str, Any]:
         self.start_timer()
         self.check_cancelled()
@@ -128,6 +135,8 @@ class RecruiterAgent(BaseAgent):
         cv_text = settings.get("cv_text", "")
         min_score = float(settings.get("min_match_score", 7.0))
         system_prompt = settings.get("prompts", {}).get("recruiter") or DEFAULT_SYSTEM_PROMPTS["recruiter"]
+        cv_skills: List[str] = list((cv_analysis or {}).get("core_skills", []))
+        cv_context: str = str((cv_analysis or {}).get("search_context_brief", "")).strip()
 
         if not mock_mode and (not GEMINI_API_KEY or GEMINI_API_KEY == "your_gemini_api_key_here"):
             raise RuntimeError("GEMINI_API_KEY is missing. Set it or enable Mock/Test Mode.")
@@ -136,7 +145,7 @@ class RecruiterAgent(BaseAgent):
         scored_candidates = []
         skipped_prefilter = 0
         for job in jobs:
-            rel = _prefilter_score(job, cv_text)
+            rel = _prefilter_score(job, cv_text, cv_skills)
             if rel < 0:
                 skipped_prefilter += 1
                 continue
@@ -179,6 +188,7 @@ class RecruiterAgent(BaseAgent):
                     for idx, j in enumerate(batch)
                 )
                 prompt = (
+                    f"CV SEARCH CONTEXT BRIEF:\n{cv_context or 'Not provided'}\n\n"
                     f"CANDIDATE CV:\n{cv_text[:2500]}\n\n"
                     f"EVALUATE THESE {len(batch)} JOBS:\n{jobs_block}\n\n"
                     "Return JSON with 'evaluations': list of objects with 'index' (0-based int), "

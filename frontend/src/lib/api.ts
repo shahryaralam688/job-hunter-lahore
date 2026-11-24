@@ -1,5 +1,6 @@
 import { getSupabaseClient } from "./supabase";
 import type {
+  CVAnalysis,
   JobItem,
   JobStatus,
   LogEntry,
@@ -81,5 +82,10 @@ export const api = {
   resetPrompts: () =>
     request<{ settings: SettingsData }>("/api/settings/reset-prompts", {
       method: "POST",
+    }),
+  analyzeCv: (payload?: { cv_text?: string; keywords?: string[]; mock_mode?: boolean }) =>
+    request<{ analysis: CVAnalysis }>("/api/cv/analyze", {
+      method: "POST",
+      body: JSON.stringify(payload || {}),
     }),
 };

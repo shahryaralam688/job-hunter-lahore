@@ -33,6 +33,15 @@ const DEFAULT_SNAPSHOT: PipelineSnapshot = {
   current_run_id: null,
   agents: [
     {
+      name: "cv_analyzer",
+      label: "CV Analyzer Agent",
+      status: "IDLE",
+      current_task: "Waiting for pipeline run",
+      items_processed: 0,
+      items_total: 0,
+      execution_time_ms: 0,
+    },
+    {
       name: "category_planner",
       label: "Category Planner",
       status: "IDLE",

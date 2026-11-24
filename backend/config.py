@@ -57,6 +57,13 @@ DEFAULT_HOURS_OLD = 72
 DEFAULT_MIN_MATCH_SCORE = 7.0
 
 DEFAULT_SYSTEM_PROMPTS = {
+    "cv_analyzer": (
+        "You are a Deep CV Strategist & Career Intelligence Agent. Analyze the candidate's CV in full detail: "
+        "extract seniority level, core technical & domain skills, and every realistic job-hunting possibility "
+        "(Primary, Secondary, and Adjacent roles in Lahore/Pakistan and Global Remote). Generate concise 2-3 word "
+        "search keywords, roles/stacks to avoid, and a crisp search context brief so downstream Category, Scout, "
+        "and Recruiter agents have full context on what to hunt for."
+    ),
     "category_planner": (
         "You are a Pakistan Career Category Planner. Before searching the internet, generate 5 top, "
         "high-prestige job categories across Pakistan (Banking & Finance, University Professor & Academia, "

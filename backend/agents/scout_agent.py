@@ -380,19 +380,25 @@ class ScoutAgent(BaseAgent):
         mock_mode: bool,
         category_queries: List[str] | None = None,
         categories: List[Dict[str, Any]] | None = None,
+        cv_analysis: Dict[str, Any] | None = None,
     ) -> Dict[str, Any]:
         self.start_timer()
         self.check_cancelled()
 
         keywords: List[str] = settings.get("keywords", [])
+        cv_keywords: List[str] = list((cv_analysis or {}).get("search_keywords", []))
+        cv_brief: str = str((cv_analysis or {}).get("search_context_brief", "")).strip()
         location: str = settings.get("location", "Lahore, Pakistan")
         hours_old: int = int(settings.get("hours_old", 72))
+
+        if cv_brief:
+            await self.log(f"Using CV Search Context: {cv_brief}")
 
         await self.set_state(
             AgentStatus.RUNNING,
             f"Harvesting {'mock feed' if mock_mode else 'all IT portals & free APIs'}",
             0,
-            len(category_queries or keywords),
+            len(category_queries or cv_keywords or keywords),
         )
 
         raw_jobs: List[Dict[str, Any]] = []
@@ -411,8 +417,16 @@ class ScoutAgent(BaseAgent):
         else:
             from jobspy import scrape_jobs
 
-            if category_queries:
-                query_groups = category_queries[:20]
+            merged_queries: List[str] = []
+            seen_q: Set[str] = set()
+            for q in list(category_queries or []) + cv_keywords:
+                clean_q = " ".join(str(q).strip().split())
+                if clean_q and clean_q.lower() not in seen_q:
+                    seen_q.add(clean_q.lower())
+                    merged_queries.append(clean_q)
+
+            if merged_queries:
+                query_groups = merged_queries[:22]
                 search_targets = [
                     {"location": "Pakistan", "is_remote": False, "label": "Pakistan"},
                     {"location": "Pakistan", "is_remote": True, "label": "Remote"},

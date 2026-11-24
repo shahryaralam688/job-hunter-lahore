@@ -6,6 +6,7 @@ from apscheduler.triggers.cron import CronTrigger
 from fastapi import Depends, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
+from agents.cv_analyzer_agent import analyze_cv_standalone
 from agents.pipeline_manager import pipeline_manager
 from auth import is_supabase_auth_configured, require_user, verify_supabase_token
 from config import CORS_ORIGINS, DEFAULT_SYSTEM_PROMPTS, GEMINI_API_KEY, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
@@ -19,7 +20,7 @@ from database import (
     update_job_status,
     update_settings,
 )
-from models import JobStatusUpdate, PipelineRunRequest, SettingsPayload
+from models import CVAnalyzeRequest, JobStatusUpdate, PipelineRunRequest, SettingsPayload
 
 scheduler = AsyncIOScheduler(timezone="Asia/Karachi")
 SCHEDULE_JOB_ID = "daily_job_hunter_pkt"
@@ -149,6 +150,22 @@ async def save_settings(payload: SettingsPayload) -> Dict[str, Any]:
 async def reset_prompts() -> Dict[str, Any]:
     updated = update_settings({"prompts": DEFAULT_SYSTEM_PROMPTS})
     return {"settings": updated}
+
+
+@app.post("/api/cv/analyze", dependencies=[Depends(require_user)])
+async def analyze_cv(body: Optional[CVAnalyzeRequest] = None) -> Dict[str, Any]:
+    settings = get_settings()
+    cv_text = (body.cv_text if body and body.cv_text is not None else settings.get("cv_text", ""))
+    keywords = (body.keywords if body and body.keywords is not None else settings.get("keywords", []))
+    mock_mode = (body.mock_mode if body and body.mock_mode is not None else bool(settings.get("mock_mode", True)))
+    prompt_override = settings.get("prompts", {}).get("cv_analyzer", "")
+    analysis = await analyze_cv_standalone(
+        cv_text=cv_text,
+        user_keywords=keywords,
+        prompt_override=prompt_override,
+        mock_mode=mock_mode,
+    )
+    return {"analysis": analysis}
 
 
 @app.websocket("/ws/pipeline")
