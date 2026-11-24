@@ -1,14 +1,17 @@
 "use client";
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
+import type { Session } from "@supabase/supabase-js";
 import {
   Activity,
   Briefcase,
   History,
+  LogOut,
   Radar,
   Settings,
 } from "lucide-react";
-import { api, WS_BASE } from "@/lib/api";
+import { api, getAccessToken, WS_BASE } from "@/lib/api";
+import { getSupabaseClient } from "@/lib/supabase";
 import type {
   JobItem,
   JobStatus,
@@ -17,6 +20,7 @@ import type {
   RunRecord,
   SettingsData,
 } from "@/lib/types";
+import { AuthScreen } from "@/components/AuthScreen";
 import { PipelineMonitor } from "@/components/PipelineMonitor";
 import { JobsView } from "@/components/JobsView";
 import { ConfigView } from "@/components/ConfigView";
@@ -77,6 +81,8 @@ const DEFAULT_SNAPSHOT: PipelineSnapshot = {
 };
 
 export default function DashboardPage() {
+  const [session, setSession] = useState<Session | null>(null);
+  const [authLoading, setAuthLoading] = useState(() => Boolean(getSupabaseClient()));
   const [activeTab, setActiveTab] = useState<TabId>("monitor");
   const [snapshot, setSnapshot] = useState<PipelineSnapshot>(DEFAULT_SNAPSHOT);
   const [logs, setLogs] = useState<LogEntry[]>([]);
@@ -86,10 +92,35 @@ export default function DashboardPage() {
   const [nextScheduledRun, setNextScheduledRun] = useState<string | null>(null);
   const [geminiConfigured, setGeminiConfigured] = useState(false);
   const [telegramConfigured, setTelegramConfigured] = useState(false);
-  const [wsConnected, setWsConnected] = useState(false);
+  const [wsConnected, setWsConnected] = useState(() => !WS_BASE);
   const [errorBanner, setErrorBanner] = useState<string | null>(null);
 
   const wsRef = useRef<WebSocket | null>(null);
+
+  useEffect(() => {
+    const supabase = getSupabaseClient();
+    if (!supabase) {
+      return;
+    }
+
+    let mounted = true;
+    supabase.auth.getSession().then(({ data }) => {
+      if (!mounted) return;
+      setSession(data.session ?? null);
+      setAuthLoading(false);
+    });
+
+    const { data: authListener } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      if (!mounted) return;
+      setSession(nextSession ?? null);
+      setAuthLoading(false);
+    });
+
+    return () => {
+      mounted = false;
+      authListener.subscription.unsubscribe();
+    };
+  }, []);
 
   const refreshData = useCallback(async () => {
     try {
@@ -119,21 +150,29 @@ export default function DashboardPage() {
   }, []);
 
   useEffect(() => {
-    refreshData();
-  }, [refreshData]);
+    if (!session) return;
+    const timer = setTimeout(() => {
+      void refreshData();
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [session, refreshData]);
 
   // WebSocket live stream with auto-reconnect (when external WS_BASE is configured)
   useEffect(() => {
-    if (!WS_BASE) {
-      setWsConnected(true);
+    if (!session || !WS_BASE) {
       return;
     }
     let cancelled = false;
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
-    const connect = () => {
+    const connect = async () => {
       if (cancelled) return;
-      const ws = new WebSocket(`${WS_BASE}/ws/pipeline`);
+      const token = await getAccessToken();
+      if (cancelled) return;
+      const wsUrl = token
+        ? `${WS_BASE}/ws/pipeline?token=${encodeURIComponent(token)}`
+        : `${WS_BASE}/ws/pipeline`;
+      const ws = new WebSocket(wsUrl);
       wsRef.current = ws;
 
       ws.onopen = () => {
@@ -163,7 +202,9 @@ export default function DashboardPage() {
       ws.onclose = () => {
         if (!cancelled) {
           setWsConnected(false);
-          reconnectTimer = setTimeout(connect, 2500);
+          reconnectTimer = setTimeout(() => {
+            void connect();
+          }, 2500);
         }
       };
 
@@ -172,14 +213,14 @@ export default function DashboardPage() {
       };
     };
 
-    connect();
+    void connect();
 
     return () => {
       cancelled = true;
       if (reconnectTimer) clearTimeout(reconnectTimer);
       wsRef.current?.close();
     };
-  }, []);
+  }, [session]);
 
   const handleRun = async () => {
     try {
@@ -241,6 +282,27 @@ export default function DashboardPage() {
     setSettings(res.settings);
   };
 
+  const handleSignOut = async () => {
+    const supabase = getSupabaseClient();
+    if (supabase) {
+      await supabase.auth.signOut();
+    }
+    wsRef.current?.close();
+    setSession(null);
+  };
+
+  if (authLoading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[#09090B] text-sm text-zinc-400">
+        Checking session...
+      </div>
+    );
+  }
+
+  if (!session) {
+    return <AuthScreen />;
+  }
+
   const tabs: { id: TabId; label: string; icon: React.ReactNode; badge?: number }[] = [
     {
       id: "monitor",
@@ -285,31 +347,51 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          <nav className="flex flex-wrap items-center gap-1.5">
-            {tabs.map((tab) => {
-              const active = activeTab === tab.id;
-              return (
-                <button
-                  key={tab.id}
-                  id={`tab-${tab.id}`}
-                  onClick={() => setActiveTab(tab.id)}
-                  className={`inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-medium transition cursor-pointer ${
-                    active
-                      ? "bg-zinc-800 text-zinc-100 ring-1 ring-zinc-700"
-                      : "text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200"
-                  }`}
-                >
-                  {tab.icon}
-                  <span>{tab.label}</span>
-                  {typeof tab.badge === "number" && (
-                    <span className="rounded-full bg-zinc-950 px-1.5 py-0.5 font-mono text-[10px] text-zinc-300">
-                      {tab.badge}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-          </nav>
+          <div className="flex flex-wrap items-center gap-2">
+            <nav className="flex flex-wrap items-center gap-1.5">
+              {tabs.map((tab) => {
+                const active = activeTab === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    id={`tab-${tab.id}`}
+                    onClick={() => setActiveTab(tab.id)}
+                    className={`inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-medium transition cursor-pointer ${
+                      active
+                        ? "bg-zinc-800 text-zinc-100 ring-1 ring-zinc-700"
+                        : "text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200"
+                    }`}
+                  >
+                    {tab.icon}
+                    <span>{tab.label}</span>
+                    {typeof tab.badge === "number" && (
+                      <span className="rounded-full bg-zinc-950 px-1.5 py-0.5 font-mono text-[10px] text-zinc-300">
+                        {tab.badge}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </nav>
+
+            <div className="flex items-center gap-2 border-l border-zinc-800 pl-2">
+              {session.user?.email && (
+                <span className="hidden max-w-[160px] truncate rounded-md bg-zinc-900 px-2 py-1 font-mono text-[11px] text-zinc-400 sm:inline-block">
+                  {session.user.email}
+                </span>
+              )}
+              <button
+                id="sign-out-btn"
+                type="button"
+                onClick={handleSignOut}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-800 bg-zinc-900 px-2.5 py-1.5 text-xs font-medium text-zinc-300 transition hover:border-zinc-700 hover:bg-zinc-800 hover:text-zinc-100 cursor-pointer"
+                title="Sign Out"
+              >
+                <LogOut className="h-3.5 w-3.5" />
+                <span>Sign Out</span>
+              </button>
+            </div>
+          </div>
         </div>
       </header>
 

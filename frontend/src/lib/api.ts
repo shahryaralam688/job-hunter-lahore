@@ -1,3 +1,4 @@
+import { getSupabaseClient } from "./supabase";
 import type {
   JobItem,
   JobStatus,
@@ -12,16 +13,28 @@ export const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
 
 export const WS_BASE = process.env.NEXT_PUBLIC_WS_URL || "";
 
+export async function getAccessToken(): Promise<string | null> {
+  const supabase = getSupabaseClient();
+  if (!supabase) return null;
+  const { data } = await supabase.auth.getSession();
+  return data.session?.access_token ?? null;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const token = await getAccessToken();
   const res = await fetch(`${API_BASE}${path}`, {
     ...init,
     headers: {
       "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...(init?.headers || {}),
     },
     cache: "no-store",
   });
   if (!res.ok) {
+    if (res.status === 401) {
+      throw new Error("Unauthorized (401). Please sign in again.");
+    }
     const text = await res.text();
     throw new Error(text || `Request failed with ${res.status}`);
   }

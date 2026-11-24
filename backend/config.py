@@ -16,6 +16,8 @@ JOOBLE_API_KEY = os.getenv("JOOBLE_API_KEY", "").strip()
 ADZUNA_APP_ID = os.getenv("ADZUNA_APP_ID", "").strip()
 ADZUNA_APP_KEY = os.getenv("ADZUNA_APP_KEY", "").strip()
 RAPIDAPI_KEY = os.getenv("RAPIDAPI_KEY", "").strip()
+SUPABASE_URL = (os.getenv("SUPABASE_URL") or os.getenv("NEXT_PUBLIC_SUPABASE_URL") or "").strip().rstrip("/")
+SUPABASE_ANON_KEY = (os.getenv("SUPABASE_ANON_KEY") or os.getenv("NEXT_PUBLIC_SUPABASE_ANON_KEY") or "").strip()
 DATABASE_PATH = os.getenv("DATABASE_PATH", str(Path(__file__).resolve().parent / "job_hunter.db"))
 CORS_ORIGINS = [
     origin.strip()

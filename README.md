@@ -19,6 +19,7 @@ Four modular agents in `backend/agents/` orchestrated by `PipelineManager` with 
 
 - **Python 3.11+**
 - **Node.js 20+** (24 LTS recommended)
+- **Supabase Project** (Email/Password Auth enabled for Sign In & Sign Up — no file storage used)
 - **Gemini API Key** (Free Tier from [Google AI Studio](https://aistudio.google.com/apikey)) — *optional if using Mock/Test Mode*
 
 ---
@@ -27,13 +28,16 @@ Four modular agents in `backend/agents/` orchestrated by `PipelineManager` with 
 
 ### 1. Environment Variables
 
-Copy `.env.example` to `.env` in the repository root:
+Copy `.env.example` to `.env` in the repository root (and `frontend/.env.local` for Next.js):
 
 ```bash
 cp .env.example .env
 ```
 
-Edit `.env` and add your `GEMINI_API_KEY` (and optional `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID`).
+Edit `.env` and set:
+- `NEXT_PUBLIC_SUPABASE_URL` & `NEXT_PUBLIC_SUPABASE_ANON_KEY` (Frontend Auth)
+- `SUPABASE_URL` & `SUPABASE_ANON_KEY` (Backend JWT verification)
+- `GEMINI_API_KEY` (and optional `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID`)
 
 ### 2. Start the Backend (FastAPI + SQLite)
 
@@ -73,3 +77,23 @@ Toggle **Mock Mode** in the dashboard header (enabled by default on first launch
 2. **Shortlisted Jobs & Application Kits**: Filterable table of matched jobs sorted by score, with a slide-over drawer containing Job Description, Missing Skills, 1-click Copy CV Bullets, 1-click Copy Cold Pitch, Interview Questions, Direct Apply Link, and Status Tracker (`New`, `Applied`, `Interview`, `Rejected`).
 3. **Agent Control & Config**: Edit your CV/Profile, Search Keywords, Location, Hours Old, Min Match Score, each agent's System Prompt (with Reset to Default), and Telegram toggle.
 4. **Run History & Stats**: Historical pipeline runs with timestamps, mode, scraped/shortlisted counts, duration, and errors.
+
+---
+
+## Deployment (Vercel & Hugging Face Spaces)
+
+### Frontend (Vercel)
+- Root Directory: `frontend`
+- Environment Variables:
+  - `NEXT_PUBLIC_SUPABASE_URL`
+  - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+  - `NEXT_PUBLIC_API_URL` (your Hugging Face Space URL, optional if using built-in Next.js API routes)
+  - `NEXT_PUBLIC_WS_URL` (`wss://<your-hf-space>.hf.space`, optional)
+
+### Backend (Hugging Face Spaces — Docker)
+- Uses `backend/Dockerfile` (port `7860`)
+- Space Secrets:
+  - `SUPABASE_URL`
+  - `SUPABASE_ANON_KEY`
+  - `GEMINI_API_KEY` (optional)
+  - `CORS_ORIGINS` (your Vercel URL)
