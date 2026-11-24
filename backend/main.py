@@ -20,7 +20,7 @@ from database import (
     update_job_status,
     update_settings,
 )
-from models import CVAnalyzeRequest, JobStatusUpdate, PipelineRunRequest, SettingsPayload
+from models import CVAnalyzeRequest, CVCleanRequest, JobStatusUpdate, PipelineRunRequest, SettingsPayload
 
 scheduler = AsyncIOScheduler(timezone="Asia/Karachi")
 SCHEDULE_JOB_ID = "daily_job_hunter_pkt"
@@ -166,6 +166,47 @@ async def analyze_cv(body: Optional[CVAnalyzeRequest] = None) -> Dict[str, Any]:
         mock_mode=mock_mode,
     )
     return {"analysis": analysis}
+
+
+@app.post("/api/cv/clean", dependencies=[Depends(require_user)])
+async def clean_cv_text(body: CVCleanRequest) -> Dict[str, Any]:
+    import asyncio
+    import re
+    from google import genai
+    from google.genai import types
+
+    normalized = re.sub(r"[ \t]{2,}", " ", re.sub(r"\n{3,}", "\n\n", body.raw_text.replace("\r\n", "\n"))).strip()[:15000]
+    if not normalized:
+        return {"cleaned_text": "", "used_llm": False}
+
+    use_mock = bool(body.mock_mode)
+    if not use_mock and GEMINI_API_KEY and GEMINI_API_KEY != "your_gemini_api_key_here":
+        try:
+            client = genai.Client(api_key=GEMINI_API_KEY, http_options=types.HttpOptions(timeout=12000))
+            cfg = types.GenerateContentConfig(
+                system_instruction=(
+                    "You are a concise CV text cleaner. Reformat raw extracted CV text into clean, readable "
+                    "plain text sections (Name/Contact, Summary, Skills, Experience, Education). "
+                    "Do NOT invent or remove any facts. Return plain text only."
+                ),
+                temperature=0.1,
+            )
+            resp = await asyncio.wait_for(
+                asyncio.to_thread(
+                    client.models.generate_content,
+                    model="gemini-2.5-flash-lite",
+                    contents=normalized[:12000],
+                    config=cfg,
+                ),
+                timeout=14.0,
+            )
+            if resp and resp.text and len(resp.text.strip()) >= 30:
+                cleaned = re.sub(r"\n{3,}", "\n\n", resp.text.replace("\r\n", "\n")).strip()[:15000]
+                return {"cleaned_text": cleaned, "used_llm": True}
+        except Exception:
+            pass
+
+    return {"cleaned_text": normalized, "used_llm": False}
 
 
 @app.websocket("/ws/pipeline")

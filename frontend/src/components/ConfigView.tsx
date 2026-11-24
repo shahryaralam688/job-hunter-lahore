@@ -1,11 +1,29 @@
 "use client";
 
-import React, { useState } from "react";
-import { Bell, Check, RotateCcw, Save, ScanSearch, Sliders, Sparkles, User } from "lucide-react";
+import React, { useRef, useState } from "react";
+import {
+  Bell,
+  Check,
+  FileUp,
+  RotateCcw,
+  Save,
+  ScanSearch,
+  Sliders,
+  Sparkles,
+  Trash2,
+  User,
+} from "lucide-react";
 import { api } from "@/lib/api";
+import {
+  clearCvBrowserCache,
+  extractCvTextInBrowser,
+  loadCvFromBrowserCache,
+  saveCvToBrowserCache,
+} from "@/lib/cvBrowserCache";
 import type { CVAnalysis, SettingsData } from "@/lib/types";
 
 interface ConfigViewProps {
+  userId?: string;
   settings: SettingsData;
   geminiConfigured: boolean;
   telegramConfigured: boolean;
@@ -47,12 +65,14 @@ const AGENT_META: { key: string; label: string; hint: string }[] = [
 ];
 
 export function ConfigView({
+  userId,
   settings,
   geminiConfigured,
   telegramConfigured,
   onSave,
   onResetPrompts,
 }: ConfigViewProps) {
+  const initialCache = loadCvFromBrowserCache(userId);
   const [prevSettings, setPrevSettings] = useState<SettingsData>(settings);
   const [draft, setDraft] = useState<SettingsData>(settings);
   const [keywordsInput, setKeywordsInput] = useState(settings.keywords.join(", "));
@@ -60,8 +80,19 @@ export function ConfigView({
   const [savedToast, setSavedToast] = useState(false);
   const [showPrompts, setShowPrompts] = useState(false);
   const [analyzingCv, setAnalyzingCv] = useState(false);
-  const [cvAnalysis, setCvAnalysis] = useState<CVAnalysis | null>(null);
+  const [extractingCv, setExtractingCv] = useState(false);
+  const [cvAnalysis, setCvAnalysis] = useState<CVAnalysis | null>(
+    () => initialCache?.analysis ?? null
+  );
+  const [cachedMeta, setCachedMeta] = useState<{ fileName?: string; updatedAt?: string } | null>(
+    () =>
+      initialCache
+        ? { fileName: initialCache.fileName, updatedAt: initialCache.updatedAt }
+        : null
+  );
+  const [cvStatusNotice, setCvStatusNotice] = useState<string | null>(null);
   const [analyzeError, setAnalyzeError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   if (settings !== prevSettings) {
     setPrevSettings(settings);
@@ -75,6 +106,96 @@ export function ConfigView({
       .map((k) => k.trim())
       .filter(Boolean);
 
+  const handleCvFileUpload = async (file: File | undefined) => {
+    if (!file) return;
+    setExtractingCv(true);
+    setAnalyzeError(null);
+    setCvStatusNotice(null);
+
+    try {
+      const extracted = await extractCvTextInBrowser(file);
+      if (extracted.isLikelyScanned) {
+        setAnalyzeError(
+          "This file looks like a scanned image PDF with minimal selectable text. Please paste text manually or use a text-based PDF/DOCX."
+        );
+        return;
+      }
+
+      let finalText = extracted.text;
+      let cleanedWithLlm = false;
+
+      if (!draft.mock_mode && geminiConfigured) {
+        try {
+          const cleanRes = await api.cleanCvText({
+            raw_text: extracted.text,
+            mock_mode: false,
+          });
+          if (cleanRes.cleaned_text && cleanRes.cleaned_text.length >= 30) {
+            finalText = cleanRes.cleaned_text;
+            cleanedWithLlm = cleanRes.used_llm;
+          }
+        } catch {
+          // Keep locally extracted browser text if LLM clean fails
+        }
+      }
+
+      const nowIso = new Date().toISOString();
+      const parsedKeywords = parseKeywords(keywordsInput);
+      const nextDraft: SettingsData = {
+        ...draft,
+        cv_text: finalText,
+        keywords: parsedKeywords.length > 0 ? parsedKeywords : draft.keywords,
+      };
+      setDraft(nextDraft);
+
+      // Analyze extracted CV immediately
+      let nextAnalysis: CVAnalysis | null = cvAnalysis;
+      try {
+        const res = await api.analyzeCv({
+          cv_text: finalText,
+          keywords: nextDraft.keywords,
+          mock_mode: nextDraft.mock_mode,
+        });
+        nextAnalysis = res.analysis;
+        setCvAnalysis(nextAnalysis);
+      } catch {
+        // Non-fatal if analyze call fails
+      }
+
+      saveCvToBrowserCache(
+        {
+          cvText: finalText,
+          fileName: extracted.fileName,
+          fileType: extracted.fileType,
+          fileSizeBytes: extracted.fileSizeBytes,
+          updatedAt: nowIso,
+          analysis: nextAnalysis,
+        },
+        userId
+      );
+      setCachedMeta({ fileName: extracted.fileName, updatedAt: nowIso });
+      await onSave(nextDraft);
+      setCvStatusNotice(
+        `Extracted ${finalText.length.toLocaleString()} chars from "${extracted.fileName}" in browser${
+          cleanedWithLlm ? " + formatted via small LLM (gemini-2.5-flash-lite)" : ""
+        } and saved to browser cache (no file stored on server).`
+      );
+    } catch (err) {
+      setAnalyzeError(err instanceof Error ? err.message : "Failed to extract CV text.");
+    } finally {
+      setExtractingCv(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+    }
+  };
+
+  const handleClearBrowserCache = () => {
+    clearCvBrowserCache(userId);
+    setCachedMeta(null);
+    setCvStatusNotice("Cleared browser CV cache.");
+  };
+
   const handleAnalyzeCv = async () => {
     setAnalyzingCv(true);
     setAnalyzeError(null);
@@ -86,6 +207,17 @@ export function ConfigView({
         mock_mode: draft.mock_mode,
       });
       setCvAnalysis(res.analysis);
+      const nowIso = new Date().toISOString();
+      saveCvToBrowserCache(
+        {
+          cvText: draft.cv_text,
+          fileName: cachedMeta?.fileName,
+          updatedAt: nowIso,
+          analysis: res.analysis,
+        },
+        userId
+      );
+      setCachedMeta((prev) => ({ fileName: prev?.fileName, updatedAt: nowIso }));
     } catch (err) {
       setAnalyzeError(err instanceof Error ? err.message : "Failed to analyze CV.");
     } finally {
@@ -103,10 +235,22 @@ export function ConfigView({
     setSaving(true);
     try {
       const parsedKeywords = parseKeywords(keywordsInput);
-      await onSave({
+      const nextSettings: SettingsData = {
         ...draft,
         keywords: parsedKeywords.length > 0 ? parsedKeywords : ["Swift", "React"],
-      });
+      };
+      const nowIso = new Date().toISOString();
+      saveCvToBrowserCache(
+        {
+          cvText: nextSettings.cv_text,
+          fileName: cachedMeta?.fileName,
+          updatedAt: nowIso,
+          analysis: cvAnalysis,
+        },
+        userId
+      );
+      setCachedMeta((prev) => ({ fileName: prev?.fileName, updatedAt: nowIso }));
+      await onSave(nextSettings);
       setSavedToast(true);
       setTimeout(() => setSavedToast(false), 2000);
     } finally {
@@ -279,26 +423,82 @@ export function ConfigView({
         </div>
 
         {/* CV / Master Profile */}
-        <div className="flex flex-col space-y-3 rounded-xl border border-zinc-800/80 bg-[#111114] p-5">
+        <div
+          onDragOver={(e) => {
+            e.preventDefault();
+          }}
+          onDrop={(e) => {
+            e.preventDefault();
+            const file = e.dataTransfer.files?.[0];
+            void handleCvFileUpload(file);
+          }}
+          className="flex flex-col space-y-3 rounded-xl border border-zinc-800/80 bg-[#111114] p-5"
+        >
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2 text-sm font-semibold text-zinc-100">
               <User className="h-4 w-4 text-emerald-400" />
               <h2>My CV / Master Profile</h2>
             </div>
-            <button
-              id="analyze-cv-btn"
-              type="button"
-              onClick={handleAnalyzeCv}
-              disabled={analyzingCv}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-cyan-500/35 bg-cyan-500/10 px-3 py-1.5 text-xs font-medium text-cyan-300 transition hover:bg-cyan-500/20 disabled:opacity-50 cursor-pointer"
-            >
-              <ScanSearch className="h-3.5 w-3.5" />
-              {analyzingCv ? "Analyzing CV..." : "Analyze CV & Possibilities"}
-            </button>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <input
+                ref={fileInputRef}
+                id="cv-file-input"
+                type="file"
+                accept=".pdf,.docx,.txt,.md"
+                className="hidden"
+                onChange={(e) => {
+                  void handleCvFileUpload(e.target.files?.[0]);
+                }}
+              />
+              <button
+                id="upload-cv-btn"
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={extractingCv}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-500/35 bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-300 transition hover:bg-emerald-500/20 disabled:opacity-50 cursor-pointer"
+              >
+                <FileUp className="h-3.5 w-3.5" />
+                {extractingCv ? "Extracting..." : "Upload CV (PDF / DOCX / TXT)"}
+              </button>
+
+              <button
+                id="analyze-cv-btn"
+                type="button"
+                onClick={handleAnalyzeCv}
+                disabled={analyzingCv || extractingCv}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-cyan-500/35 bg-cyan-500/10 px-3 py-1.5 text-xs font-medium text-cyan-300 transition hover:bg-cyan-500/20 disabled:opacity-50 cursor-pointer"
+              >
+                <ScanSearch className="h-3.5 w-3.5" />
+                {analyzingCv ? "Analyzing CV..." : "Analyze CV & Possibilities"}
+              </button>
+            </div>
           </div>
+
           <p className="text-xs text-zinc-400">
-            Analyzed by the CV Analyzer Agent to map job possibilities and search keywords, then used by Scout, Recruiter, and Writer agents.
+            Drop or select a PDF/DOCX/TXT CV to extract text directly in your browser and cache it in <code className="font-mono text-zinc-300">localStorage</code> (zero server file storage).
           </p>
+
+          {cachedMeta && (
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-zinc-800/80 bg-zinc-950/70 px-3 py-2 text-[11px] text-zinc-400">
+              <span>
+                Cached in browser
+                {cachedMeta.fileName ? ` · ${cachedMeta.fileName}` : ""}
+                {cachedMeta.updatedAt
+                  ? ` · ${new Date(cachedMeta.updatedAt).toLocaleString()}`
+                  : ""}
+              </span>
+              <button
+                type="button"
+                onClick={handleClearBrowserCache}
+                className="inline-flex items-center gap-1 text-zinc-400 hover:text-rose-300 cursor-pointer"
+              >
+                <Trash2 className="h-3 w-3" />
+                Clear Cache
+              </button>
+            </div>
+          )}
+
           <textarea
             id="config-cv-text"
             value={draft.cv_text}
@@ -306,6 +506,13 @@ export function ConfigView({
             rows={12}
             className="w-full flex-1 rounded-lg border border-zinc-800 bg-zinc-950 p-3 font-mono text-xs leading-relaxed text-zinc-200 focus:border-emerald-500/60 focus:outline-none"
           />
+
+          {cvStatusNotice && (
+            <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-200">
+              {cvStatusNotice}
+            </div>
+          )}
+
           {analyzeError && (
             <div className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-200">
               {analyzeError}

@@ -11,6 +11,7 @@ import {
   Settings,
 } from "lucide-react";
 import { api, getAccessToken, WS_BASE } from "@/lib/api";
+import { loadCvFromBrowserCache } from "@/lib/cvBrowserCache";
 import { getSupabaseClient } from "@/lib/supabase";
 import type {
   JobItem,
@@ -131,6 +132,8 @@ export default function DashboardPage() {
     };
   }, []);
 
+  const userId = session?.user?.id;
+
   const refreshData = useCallback(async () => {
     try {
       const [statusRes, logsRes, jobsRes, runsRes, settingsRes] = await Promise.all([
@@ -140,11 +143,16 @@ export default function DashboardPage() {
         api.getRuns(),
         api.getSettings(),
       ]);
+      const cached = loadCvFromBrowserCache(userId);
+      const mergedSettings =
+        cached?.cvText && cached.cvText.trim()
+          ? { ...settingsRes.settings, cv_text: cached.cvText }
+          : settingsRes.settings;
       setSnapshot(statusRes);
       setLogs(logsRes.logs);
       setJobs(jobsRes.jobs);
       setRuns(runsRes.runs);
-      setSettings(settingsRes.settings);
+      setSettings(mergedSettings);
       setNextScheduledRun(settingsRes.next_scheduled_run);
       setGeminiConfigured(settingsRes.gemini_configured);
       setTelegramConfigured(settingsRes.telegram_configured);
@@ -156,7 +164,7 @@ export default function DashboardPage() {
           : "Backend unreachable."
       );
     }
-  }, []);
+  }, [userId]);
 
   useEffect(() => {
     if (!session) return;
@@ -233,6 +241,11 @@ export default function DashboardPage() {
 
   const handleRun = async () => {
     try {
+      const cached = loadCvFromBrowserCache(session?.user?.id);
+      if (settings && cached?.cvText && cached.cvText !== settings.cv_text) {
+        const synced = await api.saveSettings({ ...settings, cv_text: cached.cvText });
+        setSettings(synced.settings);
+      }
       await api.runPipeline(settings?.mock_mode);
       setErrorBanner(null);
       if (!WS_BASE) {
@@ -434,6 +447,7 @@ export default function DashboardPage() {
 
         {activeTab === "config" && settings && (
           <ConfigView
+            userId={session.user?.id}
             settings={settings}
             geminiConfigured={geminiConfigured}
             telegramConfigured={telegramConfigured}
