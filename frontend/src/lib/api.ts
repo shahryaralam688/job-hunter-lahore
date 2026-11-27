@@ -88,9 +88,4 @@ export const api = {
       method: "POST",
       body: JSON.stringify(payload || {}),
     }),
-  cleanCvText: (payload: { raw_text: string; mock_mode?: boolean }) =>
-    request<{ cleaned_text: string; used_llm: boolean }>("/api/cv/clean", {
-      method: "POST",
-      body: JSON.stringify(payload),
-    }),
 };

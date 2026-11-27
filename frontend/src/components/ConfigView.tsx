@@ -81,6 +81,7 @@ export function ConfigView({
   const [showPrompts, setShowPrompts] = useState(false);
   const [analyzingCv, setAnalyzingCv] = useState(false);
   const [extractingCv, setExtractingCv] = useState(false);
+  const [extractProgress, setExtractProgress] = useState<string | null>(null);
   const [cvAnalysis, setCvAnalysis] = useState<CVAnalysis | null>(
     () => initialCache?.analysis ?? null
   );
@@ -109,36 +110,22 @@ export function ConfigView({
   const handleCvFileUpload = async (file: File | undefined) => {
     if (!file) return;
     setExtractingCv(true);
+    setExtractProgress("Preparing browser extractor...");
     setAnalyzeError(null);
     setCvStatusNotice(null);
 
     try {
-      const extracted = await extractCvTextInBrowser(file);
-      if (extracted.isLikelyScanned) {
+      const extracted = await extractCvTextInBrowser(file, (status) => {
+        setExtractProgress(status);
+      });
+      if (extracted.isLikelyScanned || !extracted.text) {
         setAnalyzeError(
-          "This file looks like a scanned image PDF with minimal selectable text. Please paste text manually or use a text-based PDF/DOCX."
+          "Could not read enough text from this file even with browser OCR. Please try a clearer image/PDF or paste your CV text."
         );
         return;
       }
 
-      let finalText = extracted.text;
-      let cleanedWithLlm = false;
-
-      if (!draft.mock_mode && geminiConfigured) {
-        try {
-          const cleanRes = await api.cleanCvText({
-            raw_text: extracted.text,
-            mock_mode: false,
-          });
-          if (cleanRes.cleaned_text && cleanRes.cleaned_text.length >= 30) {
-            finalText = cleanRes.cleaned_text;
-            cleanedWithLlm = cleanRes.used_llm;
-          }
-        } catch {
-          // Keep locally extracted browser text if LLM clean fails
-        }
-      }
-
+      const finalText = extracted.text;
       const nowIso = new Date().toISOString();
       const parsedKeywords = parseKeywords(keywordsInput);
       const nextDraft: SettingsData = {
@@ -168,6 +155,7 @@ export function ConfigView({
           fileName: extracted.fileName,
           fileType: extracted.fileType,
           fileSizeBytes: extracted.fileSizeBytes,
+          extractionMethod: extracted.extractionMethod,
           updatedAt: nowIso,
           analysis: nextAnalysis,
         },
@@ -176,14 +164,13 @@ export function ConfigView({
       setCachedMeta({ fileName: extracted.fileName, updatedAt: nowIso });
       await onSave(nextDraft);
       setCvStatusNotice(
-        `Extracted ${finalText.length.toLocaleString()} chars from "${extracted.fileName}" in browser${
-          cleanedWithLlm ? " + formatted via small LLM (gemini-2.5-flash-lite)" : ""
-        } and saved to browser cache (no file stored on server).`
+        `Extracted ${finalText.length.toLocaleString()} chars from "${extracted.fileName}" via ${extracted.extractionMethod} (0% server load, saved in browser cache).`
       );
     } catch (err) {
       setAnalyzeError(err instanceof Error ? err.message : "Failed to extract CV text.");
     } finally {
       setExtractingCv(false);
+      setExtractProgress(null);
       if (fileInputRef.current) {
         fileInputRef.current.value = "";
       }
@@ -445,7 +432,7 @@ export function ConfigView({
                 ref={fileInputRef}
                 id="cv-file-input"
                 type="file"
-                accept=".pdf,.docx,.txt,.md"
+                accept=".pdf,.docx,.odt,.rtf,.html,.htm,.txt,.md,.png,.jpg,.jpeg,.webp"
                 className="hidden"
                 onChange={(e) => {
                   void handleCvFileUpload(e.target.files?.[0]);
@@ -459,7 +446,7 @@ export function ConfigView({
                 className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-500/35 bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-300 transition hover:bg-emerald-500/20 disabled:opacity-50 cursor-pointer"
               >
                 <FileUp className="h-3.5 w-3.5" />
-                {extractingCv ? "Extracting..." : "Upload CV (PDF / DOCX / TXT)"}
+                {extractingCv ? "Extracting..." : "Upload CV (Any Format)"}
               </button>
 
               <button
@@ -476,8 +463,14 @@ export function ConfigView({
           </div>
 
           <p className="text-xs text-zinc-400">
-            Drop or select a PDF/DOCX/TXT CV to extract text directly in your browser and cache it in <code className="font-mono text-zinc-300">localStorage</code> (zero server file storage).
+            Drop or select PDF (text or scanned), DOCX, ODT, RTF, HTML, TXT, MD, or Image (PNG/JPG/WEBP) — extracted 100% in your browser with OCR fallback and cached in <code className="font-mono text-zinc-300">localStorage</code> (0% server load).
           </p>
+
+          {extractProgress && (
+            <div className="rounded-lg border border-sky-500/30 bg-sky-500/10 px-3 py-2 text-xs text-sky-200">
+              {extractProgress}
+            </div>
+          )}
 
           {cachedMeta && (
             <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-zinc-800/80 bg-zinc-950/70 px-3 py-2 text-[11px] text-zinc-400">

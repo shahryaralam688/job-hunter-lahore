@@ -105,8 +105,3 @@ class CVAnalyzeRequest(BaseModel):
     cv_text: Optional[str] = None
     keywords: Optional[List[str]] = None
     mock_mode: Optional[bool] = None
-
-
-class CVCleanRequest(BaseModel):
-    raw_text: str
-    mock_mode: Optional[bool] = None
